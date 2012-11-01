@@ -1367,8 +1367,6 @@ int main( int argc, char** argv )
 
 
 	//Counter for raster_detection
-	
-	/*
 	int *dev_counter_raster = 0;
 	int raster_counter;
 
@@ -1382,7 +1380,7 @@ int main( int argc, char** argv )
 
 	CUDA_SAFE_CALL(cudaMemset(dev_counter_raster, 0, sizeof(int)));
 	ERROR_CHECK
-	*/
+
 
 ////////////////////////////////////////////////////////////
 
@@ -1648,21 +1646,36 @@ number_of_threads = irowiterations*icoliterations;
 subwindow_find_candidates<<<(number_of_threads+127)/128,128>>>( nStages, dev_cascade, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, dev_imgInt_f, dev_imgSqInt_f, tileHeight, tileWidth, real_height, scaleFactor, scale_correction_factor, dev_foundObj, dev_nb_obj_found);
 
 ERROR_CHECK
-
+/*
+for(int i=0; i<width*height; i++)
+{
+	CUDA_SAFE_CALL(cudaMemcpy(&raster_counter, dev_goodPoints+i, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+	ERROR_CHECK
+	printf("dev_goodPoints[%d]=%d\n",i,raster_counter);
+}
+//Checked and is the same
+*/
 
 subwindow_examine_candidates<<<(number_of_threads+127)/128,128>>>(lock, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, tileHeight, tileWidth, scaleFactor, dev_foundObj, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_scale_index_found, dev_nb_obj_found, dev_nb_obj_found2);
 
 ERROR_CHECK
 
-CUDA_SAFE_CALL(cudaMemcpy(&nb_obj_found, dev_nb_obj_found, sizeof(int), cudaMemcpyDeviceToHost));
+CUDA_SAFE_CALL(cudaMemcpy(&raster_counter, dev_nb_obj_found, sizeof(int), cudaMemcpyDeviceToHost));
 ERROR_CHECK
-
-printf("ScaleFactor: %f\n", scaleFactor);
-
+//printf("nb_obj_found=%d\n",raster_counter);
 for(int i=0; i<nStages; i++)
 {
-	printf("Number: %d --- nb_obj_found=%d\n", i,  nb_obj_found);
+	for(int j=0; j<NB_MAX_DETECTION; j++)
+	{
+		CUDA_SAFE_CALL(cudaMemcpy(&raster_counter, dev_goodcenterX+i*NB_MAX_DETECTION+j, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+		ERROR_CHECK
+		printf("dev_goodCenterX[%d][%d]=%d\n",i,j,raster_counter);
+	}
 }
+exit(-1);
+
+CUDA_SAFE_CALL(cudaMemcpy(&nb_obj_found, dev_nb_obj_found, sizeof(int), cudaMemcpyDeviceToHost));
+ERROR_CHECK
 
 
 	}	
@@ -1682,13 +1695,22 @@ ERROR_CHECK
 
 
 	if (scale_index_found)
-		TRACE_INFO(("\n---------------------------------------------\nHandling multiple detections\n---------------------------------------------\n"));
+		TRACE_INFO(("\n---------------------------------------------\nHandling multiple detections\nscale index found:%d---------------------------------------------\n", scale_index_found));
 
 /*KERNEL ONE*/
 
 kernel_one<<<1,scale_index_found>>>(dev_scale_index_found, dev_nb_obj_found2);
 ERROR_CHECK
 
+
+/*for(int i=0; i<=scale_index_found; i++)
+{
+	CUDA_SAFE_CALL(cudaMemcpy(&raster_counter, dev_nb_obj_found2+i, sizeof(int), cudaMemcpyDeviceToHost));
+	ERROR_CHECK
+	printf("nb_obj_found2[%d]=%d\n",i,raster_counter);
+}
+exit(-1);
+*/
 /*KERNEL TWO*/
 
 kernel_two_alt<<<1,1>>>(dev_scale_index_found, dev_nb_obj_found2, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_position, dev_count);
@@ -1705,15 +1727,12 @@ icoliterations = (int)ceilf((float)NB_MAX_POINTS/3);
 
 number_of_threads = irowiterations*icoliterations;
 
-//kernel_three<<<(number_of_threads+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, real_height, dev_counter_raster);
-kernel_three<<<(number_of_threads+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, real_height);
+kernel_three<<<(number_of_threads+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, real_height, dev_counter_raster);
 ERROR_CHECK
 
-/*
-CUDA_SAFE_CALL(cudaMemcpy(&raster_counter, dev_counter_raster, sizeof(int), cudaMemcpyDeviceToHost));
+/*CUDA_SAFE_CALL(cudaMemcpy(&raster_counter, dev_counter_raster, sizeof(int), cudaMemcpyDeviceToHost));
 ERROR_CHECK
-printf("\nraster_counter = %d\n", raster_counter);
-*/
+printf("\nraster_counter = %d\n", raster_counter);*/
 
 /*KERNEL DRAW DETECTION*/
 
@@ -1760,9 +1779,7 @@ CUDA_SAFE_CALL(cudaMemcpy(&finalNb, dev_finalNb, sizeof(int), cudaMemcpyDeviceTo
 ERROR_CHECK
 
 
-	//sprintf(result_name, "result_%d.pgm", finalNb);
-
-	sprintf(result_name, "result_%s.pgm", imgName);
+	sprintf(result_name, "result_%d.pgm", finalNb);
 
 	// Write the final result of the detection application 
 	imgWrite((uint32_t *)&(result2[scale_index_found*width*height]), result_name, height, width);

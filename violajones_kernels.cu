@@ -361,7 +361,7 @@ kernel_two_alt(int *dev_scale_index_found, uint32_t *dev_nb_obj_found2, uint32_t
 
 
 __global__ void
-kernel_three(uint32_t *dev_position, int *dev_scale_index_found, int real_width, int real_height/*, int *dev_counter_raster*/)
+kernel_three(uint32_t *dev_position, int *dev_scale_index_found, int real_width, int real_height, int *dev_counter_raster)
 {
 	int offset_X = 0;
 	int offset_Y = 0;
@@ -383,7 +383,7 @@ kernel_three(uint32_t *dev_position, int *dev_scale_index_found, int real_width,
 			if((float)offset_X >= abs((float)dev_position[i]-dev_position[i+j]) && (float)offset_Y >= abs((float)dev_position[i+1]-dev_position[i+j+1]))
 			{
 
-	//			atomicAdd(dev_counter_raster, 1);
+				atomicAdd(dev_counter_raster, 1);
 
 				dev_position[i+j] = 0;
 				dev_position[i+j+1] = 0;
@@ -399,8 +399,7 @@ __global__ void
 kernel_draw_detection(uint32_t *dev_position, int *dev_scale_index_found, int real_width, uint32_t *dev_result2, int width_height)
 {
 	int counter = blockDim.x * blockIdx.x + threadIdx.x;
-//	int i = (counter % NB_MAX_POINTS) * 3;
-	int i = counter * 3;
+	int i = (counter % NB_MAX_POINTS) * 3;
 
 	// Draw detection
 	if(i < NB_MAX_POINTS)
