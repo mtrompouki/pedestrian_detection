@@ -8,6 +8,8 @@
 ##
 ##              (C) COPYRIGHT 2010 THALES RESEARCH & TECHNOLOGY
 ##                            ALL RIGHTS RESERVED
+##              (C) COPYRIGHT 2012 Universitat Politècnica de Catalunya
+##                            ALL RIGHTS RESERVED
 ##
 ## The entire notice above must be reproduced on all authorized copies.
 ##
@@ -15,18 +17,21 @@
 ## Title:             Makefile pedestrian detection application
 ##
 ## File:              Makefile
-## Author:            Paul Brelet  <paul.brelet@thalesgroup.com>
+## Authors:           Paul Brelet  <paul.brelet@thalesgroup.com>
+##                    Matina Maria Trompouki  <mtrompou@ac.upc.edu>
 ##
 ###############################################################################
 
 all: violajones
 
-violajones: violajones.c violajones.h
-#	gcc -ftree-vectorize -ftree-loop-linear -ftree-loop-im -funroll-loops -ffast-math -ftrapv -o3 -g -Wall -Werror -lm -o violajones violajones.c
-	gcc -g -Wall -lm -o violajones violajones.c
+violajones.o: violajones.cu violajones.h
+	nvcc -arch=sm_11 -g -c violajones.cu 
+
+violajones:	 violajones.o
+	nvcc -g -lm -L. -lcutil -lcudart -o violajones violajones.o 
 
 clean:
-	rm -rf *.o violajones
+	rm -rf violajones *.o
 
 run: all
 	./violajones person_015.pgm classifier.txt

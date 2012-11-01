@@ -9,6 +9,8 @@
 ##
 ##              (C) COPYRIGHT 2010 THALES RESEARCH & TECHNOLOGY
 ##                            ALL RIGHTS RESERVED
+##              (C) COPYRIGHT 2012 Universitat Politècnica de Catalunya
+##                            ALL RIGHTS RESERVED
 ##
 ## The entire notice above must be reproduced on all authorized copies.
 ##
@@ -16,7 +18,8 @@
 ## Title:             violajones.h
 ##
 ## File:              header file
-## Author:            Teodora Petrisor  <claudia-teodora.petrisor@thalesgroup.com>
+## Authors:           Teodora Petrisor  <claudia-teodora.petrisor@thalesgroup.com>
+##                    Matina Maria Trompouki  <mtrompou@ac.upc.edu>
 ## Description:       source file
 ##
 ## Modification:
@@ -26,12 +29,23 @@
 */
 
 /* -------------------------- Global constant parameters ------------------ */
+#ifndef __VIOLAJONES_H__
+#define __VIOLAJONES_H__
+
+#define max( a, b ) ( ((a) > (b)) ? (a) : (b) )
+
 #define N_BITS_MAX         8
 #define N_CHANNELS_MAX     3
 #define N_RECTANGLES_MAX   4    // max number of rectangles in Haar feature
-#define N_MAX_STAGES       80   // only a test example, actual number much higher
+#define N_MAX_STAGES       30   // only a test example, actual number much higher
 #define N_MAX_CLASSIFIERS  250  // only a test example, actual number may be much higher
 
+#define NB_MAX_DETECTION  100                    /* Maximum number of detections */
+#define NB_MAX_POINTS     3*NB_MAX_DETECTION     /* Maximum number of detection parameters (3 points/detection) */
+
+#define ERROR_CHECK { cudaError_t err; \
+if ((err = cudaGetLastError()) != cudaSuccess) { \
+  printf("CUDA error: %s, line %d\n", cudaGetErrorString(err), __LINE__);}}
 
 /* ------------------------------- Data types ----------------------------- */
 
@@ -101,8 +115,50 @@ typedef struct CvHaarClassifierCascade
     int orig_window_sizeC;
     /* these two parameters are set by cvSetImagesForHaarClassifierCascade */
     int real_window_size; /* current object size */
-    double scale; /* current scale */
+    float scale; /* current scale */
     CvHaarStageClassifier* stageClassifier; /* array of stage classifiers up to N_MAX_STAGES*/
 }
 CvHaarClassifierCascade;
+
+struct Lock{
+        int *mutex;
+        Lock(void){
+                int state = 0;
+		mutex=NULL;
+                CUDA_SAFE_CALL(cudaMalloc((void**)&mutex, sizeof(int)));
+                ERROR_CHECK
+
+		if(mutex == NULL)
+		{
+			printf("Cannot allocate memory for mutex\n");
+			exit(-1);
+		}
+                CUDA_SAFE_CALL(cudaMemcpy(mutex, &state, sizeof(int), cudaMemcpyHostToDevice));
+                ERROR_CHECK
+        }
+
+        ~Lock(void){
+                //cudaFree(mutex);
+        }
+
+        __device__ void lock(void){
+                while(atomicCAS(mutex, 0, 1) != 0);
+        }
+
+        __device__ void unlock(void){
+                atomicExch(mutex, 0);
+        }
+};
+
+__host__ __device__
+float computeVariance(float *img, float *imgSq, int irow, int icol, int height, int width, int real_height, int real_width);
+
+__host__ __device__
+void computeFeature(float *img, float *imgSq, CvHaarFeature *f, float *featVal, int irow, int icol, int height, int width, float scale, float scale_correction_factor, CvHaarFeature *f_scaled, int real_height, int real_width);
+
+__host__ __device__ 
+void raster_rectangle(uint32_t *img, int x0, int y0, int radius, int real_width);
+
+
+#endif
 

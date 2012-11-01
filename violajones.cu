@@ -9,18 +9,24 @@
 ##
 ##              (C) COPYRIGHT 2010 THALES RESEARCH & TECHNOLOGY
 ##                            ALL RIGHTS RESERVED
+##              (C) COPYRIGHT 2012 Universitat Politècnica de Catalunya
+##                            ALL RIGHTS RESERVED
 ##
 ## The entire notice above must be reproduced on all authorized copies.
 ##
 ##
 ## Title:             violajones.c
 ##
-## File:              C file
+## File:              CUDA file
 ## Author:            Teodora Petrisor <claudia-teodora.petrisor@thalesgroup.com>
-## Description:       C source file
+##                    Matina Maria Trompouki  <mtrompou@ac.upc.edu>
+## Description:       CUDA source file
 ##
 ## Modification:
 ## Author:            Paul Brelet  <paul.brelet@thalesgroup.com>
+##
+## Porting into CUDA:
+## Author:	      Matina Maria Trompouki  <mtrompou@ac.upc.edu>
 ##
 ###############################################################################
 */
@@ -33,7 +39,8 @@
 *
 * authors:  Teodora Petrisor
 * Modifications: Paul Brelet
-* 
+* CUDA code: Matina Maria Trompouki
+*
 * ************************************************************************* */
 
 /******INCLUDE********/
@@ -46,12 +53,16 @@
 #include <stdint.h>
 #include <time.h>
 #include <float.h>
+#include "cutil.h"
 #include <assert.h>
+
 /* Static Library */
 #include "violajones.h"
 
+#include "violajones_kernels.cu"
+
 /******MACROS ********/
-#define max( a, b ) ( ((a) > (b)) ? (a) : (b) )
+//#define max( a, b ) ( ((a) > (b)) ? (a) : (b) )
 #define min( a, b ) ( ((a) < (b)) ? (a) : (b) )
 
 #define INFO      1
@@ -59,8 +70,6 @@
 #define MAX_BUFFERSIZE    256                    /* Maximum name file */
 #define MAX_IMAGESIZE     1024                   /* Maximum Image Size */
 #define MAX_BRIGHTNESS    255                    /* Maximum gray level */
-#define NB_MAX_DETECTION  100                    /* Maximum number of detections */
-#define NB_MAX_POINTS     3*NB_MAX_DETECTION     /* Maximum number of detection parameters (3 points/detection) */
 
 
 #if INFO
@@ -68,7 +77,6 @@
 #else
 #define TRACE_INFO(x)
 #endif
-
 
 /* ********************************** FUNCTIONS ********************************** */
 
@@ -84,6 +92,9 @@ void load_image_check(uint32_t *img, char *imgName, int width, int height)
 	int error = 0;                       /* Check if errors */
 
 	/* Input file open */
+	TRACE_INFO(("\n-----------------------------------------------------\n"));
+	TRACE_INFO(("PGM image file input routine \n"));
+	TRACE_INFO(("-----------------------------------------------------\n"));
 	
 	fp = fopen(imgName, "rb");
 	if (NULL == fp)
@@ -118,6 +129,8 @@ void load_image_check(uint32_t *img, char *imgName, int width, int height)
 			}
 		}
 		/* Display parameters */
+		TRACE_INFO(("\n   Image width = %d, Image height = %d\n", x_size1, y_size1));
+		TRACE_INFO(("     Maximum gray level = %d\n\n",max_gray));
 		if (x_size1 > MAX_IMAGESIZE || y_size1 > MAX_IMAGESIZE)
 		{
 			TRACE_INFO(("     Image size exceeds %d x %d\n\n", MAX_IMAGESIZE, MAX_IMAGESIZE));
@@ -289,6 +302,86 @@ void imgWrite(uint32_t *imgIn, char img_out_name[MAX_BUFFERSIZE], int height, in
 }
 //end function: imgWrite *******************************************************
 
+
+/*Allocation function for GPU*/
+CvHaarClassifierCascade* cudaAllocCascade_continuous()
+{
+	CvHaarClassifierCascade *dev_cc;
+
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_cc, (unsigned) (sizeof(CvHaarClassifierCascade)
+					+ N_MAX_STAGES * sizeof(CvHaarStageClassifier)
+					+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarClassifier)
+					+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarFeature))));
+        ERROR_CHECK
+	
+        if (dev_cc == NULL) {
+               TRACE_INFO(("CUDA_ALLOCCASCADE: Couldn't allocate classifier cascade in the GPU\n"));
+               exit(-1);
+        }
+	
+	return dev_cc; 
+}
+
+/**Copies the entire cascade from the host to device**/
+void copyCascadeFromHostToDevice(CvHaarClassifierCascade* cc_device, CvHaarClassifierCascade* cc_host)
+{	
+	CUDA_SAFE_CALL(cudaMemcpy(cc_device, cc_host, (unsigned) sizeof(CvHaarClassifierCascade)
+					+ N_MAX_STAGES * sizeof(CvHaarStageClassifier)
+					+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarClassifier)
+					+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarFeature),
+				  cudaMemcpyHostToDevice));
+        ERROR_CHECK	
+}
+
+/*** Allocation function for Classifier Cascade ***/
+CvHaarClassifierCascade* allocCascade_continuous()
+{
+	int i = 0;
+	int j = 0;
+	int k = 0;
+
+	CvHaarClassifierCascade *cc;
+
+	cc = (CvHaarClassifierCascade *)malloc(sizeof(CvHaarClassifierCascade)
+					+ N_MAX_STAGES * sizeof(CvHaarStageClassifier)
+					+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarClassifier)
+					+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarFeature));
+
+	memset(cc,0,sizeof(CvHaarClassifierCascade)
+			+ N_MAX_STAGES * sizeof(CvHaarStageClassifier)
+			+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarClassifier)
+			+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarFeature));
+
+	cc->stageClassifier = (CvHaarStageClassifier*)(((char*)cc) + sizeof(CvHaarClassifierCascade));     
+
+
+	for (i = 0; i < N_MAX_STAGES; i++)
+	{
+		cc->stageClassifier[i].classifier = (CvHaarClassifier*)(((char*)cc->stageClassifier) + (N_MAX_STAGES * sizeof(CvHaarStageClassifier)) + (i*N_MAX_CLASSIFIERS*sizeof(CvHaarClassifier)));	
+
+		
+		for(j = 0; j < N_MAX_CLASSIFIERS; j++)
+		{
+			cc->stageClassifier[i].classifier[j].haarFeature = (CvHaarFeature*)(((char*)&(cc->stageClassifier[N_MAX_STAGES])) + (N_MAX_STAGES*N_MAX_CLASSIFIERS*sizeof(CvHaarClassifier)) + (((i*N_MAX_CLASSIFIERS)+j)*sizeof(CvHaarFeature)));
+			
+			for (k = 0; k<2; k++)
+			{
+				cc->stageClassifier[i].classifier[j].haarFeature->rect[k].r.x0 = 0;
+				cc->stageClassifier[i].classifier[j].haarFeature->rect[k].r.y0 = 0;
+				cc->stageClassifier[i].classifier[j].haarFeature->rect[k].r.width = 1;
+				cc->stageClassifier[i].classifier[j].haarFeature->rect[k].r.height = 1;
+				cc->stageClassifier[i].classifier[j].haarFeature->rect[k].weight = 1.0;
+			}
+			cc->stageClassifier[i].classifier[j].threshold = 0.0;        
+			cc->stageClassifier[i].classifier[j].left = 1.0;
+			cc->stageClassifier[i].classifier[j].right = 1.0;
+		}
+		cc->stageClassifier[i].count = 1;
+		cc->stageClassifier[i].threshold = 0.0;
+	}
+	return cc; 
+}
+
 /*** Allocation function for Classifier Cascade ***/
 CvHaarClassifierCascade* allocCascade()
 {
@@ -298,15 +391,15 @@ CvHaarClassifierCascade* allocCascade()
 
 	CvHaarClassifierCascade *cc;
 
-	cc = malloc(sizeof(CvHaarClassifierCascade));
-	cc->stageClassifier = calloc(N_MAX_STAGES,sizeof(CvHaarStageClassifier));
+	cc = (CvHaarClassifierCascade *)malloc(sizeof(CvHaarClassifierCascade));
+	cc->stageClassifier = (CvHaarStageClassifier *)calloc(N_MAX_STAGES,sizeof(CvHaarStageClassifier));
 	for (i = 0; i < N_MAX_STAGES; i++)
 	{
-		cc->stageClassifier[i].classifier = calloc(N_MAX_CLASSIFIERS,sizeof(CvHaarClassifier));
+		cc->stageClassifier[i].classifier = (CvHaarClassifier *)calloc(N_MAX_CLASSIFIERS,sizeof(CvHaarClassifier));
 		for(j = 0; j < N_MAX_CLASSIFIERS; j++)
 		{
-			cc->stageClassifier[i].classifier[j].haarFeature = malloc(sizeof(CvHaarFeature));
-			for (k = 0; k<N_RECTANGLES_MAX; k++)
+			cc->stageClassifier[i].classifier[j].haarFeature = (CvHaarFeature *)malloc(sizeof(CvHaarFeature));
+			for (k = 0; k<2; k++)
 			{
 				cc->stageClassifier[i].classifier[j].haarFeature->rect[k].r.x0 = 0;
 				cc->stageClassifier[i].classifier[j].haarFeature->rect[k].r.y0 = 0;
@@ -324,6 +417,12 @@ CvHaarClassifierCascade* allocCascade()
 	return cc;
 }
 //end function: allocCascade ***************************************************
+
+
+void releaseCascade_continuous(CvHaarClassifierCascade *cc)
+{
+	free(cc);
+}
 
 /*** Deallocation function for the whole Cascade ***/
 void releaseCascade(CvHaarClassifierCascade *cc)
@@ -399,7 +498,6 @@ void readClassifCascade(char *haarFileName, CvHaarClassifierCascade *cascade, in
 //                Stage threshold
 					sscanf(line,"%*s %*d %f", &thresh);
 					isRect = 0;
-					assert(iStage<N_MAX_STAGES);
 					cascade->stageClassifier[iStage].count = iNode+1;
 					cascade->stageClassifier[iStage].threshold = thresh;
 					break;
@@ -416,8 +514,6 @@ void readClassifCascade(char *haarFileName, CvHaarClassifierCascade *cascade, in
 				{
 					isRect = 1;
 					sscanf(line,"%*s %d %d %d %d %f", &x0, &y0, &wR, &hR, &weight);
-					assert(iNode<N_MAX_CLASSIFIERS);
-				        assert(nRectangles-1<N_RECTANGLES_MAX);
 					cascade->stageClassifier[iStage].classifier[iNode].haarFeature->rect[nRectangles-1].r.x0 = x0;
 					cascade->stageClassifier[iStage].classifier[iNode].haarFeature->rect[nRectangles-1].r.y0 = y0;
 					cascade->stageClassifier[iStage].classifier[iNode].haarFeature->rect[nRectangles-1].r.width = wR;
@@ -428,16 +524,12 @@ void readClassifCascade(char *haarFileName, CvHaarClassifierCascade *cascade, in
 				case 'a':
 				{
 					sscanf(line,"%*s %f", &a);
-					assert(iStage<N_MAX_STAGES);
-					assert(iNode<N_MAX_CLASSIFIERS);
 					cascade->stageClassifier[iStage].classifier[iNode].left = a;
 					break;
 				}                                
 				case 'b':
 				{
 					sscanf(line,"%*s %f", &b);
-					assert(iStage<N_MAX_STAGES);
-                                        assert(iNode<N_MAX_CLASSIFIERS);
 					cascade->stageClassifier[iStage].classifier[iNode].right = b;
 					break;
 				}
@@ -445,14 +537,11 @@ void readClassifCascade(char *haarFileName, CvHaarClassifierCascade *cascade, in
 				{
 					isRect = 0;
 					sscanf(line,"%f",&featThresh);
-					assert(iStage<N_MAX_STAGES);
-                                        assert(iNode<N_MAX_CLASSIFIERS);
 					cascade->stageClassifier[iStage].classifier[iNode].threshold = featThresh;
 				}
 			}
 		}        
 		*nStages = iStage+1;
-		assert(*nStages<N_MAX_STAGES);
 		cascade->count = *nStages;
 		cascade->orig_window_sizeR = *nRows;
 		cascade->orig_window_sizeC = *nCols;
@@ -477,11 +566,11 @@ void imgDotSquare(uint32_t *imgIn, uint32_t *imgOut, int height, int width)
 //end function: imgDotSquare ***************************************************
 
 /*** Compute variance-normalized image ****/
-void imgNormalize(uint32_t *imgIn, double *imgOut, double normFact, int height, int width)
+void imgNormalize(uint32_t *imgIn, float *imgOut, float normFact, int height, int width)
 {
 	int irow = 0, icol = 0;
 	int dim = 0;
-	double meanImg = 0.0;
+	float meanImg = 0.0;
 
 	dim = width*height;
 
@@ -503,8 +592,8 @@ void imgNormalize(uint32_t *imgIn, double *imgOut, double normFact, int height, 
 }
 //end function: imgNormalize ***************************************************
 
-/*** Cast int image as double ****/
-void imgCopy(uint32_t *imgIn, double *imgOut, int height, int width)
+/*** Cast int image as float ****/
+void imgCopy(uint32_t *imgIn, float *imgOut, int height, int width)
 {
 	int irow = 0, icol = 0;
 
@@ -512,7 +601,7 @@ void imgCopy(uint32_t *imgIn, double *imgOut, int height, int width)
 	{
 		for (icol = 0; icol < width; icol++)
 		{
-			imgOut[irow*width+icol] = (double)imgIn[irow*width+icol];
+			imgOut[irow*width+icol] = (float)imgIn[irow*width+icol];
 		}
 	}
 }
@@ -560,9 +649,9 @@ void computeIntegralImg(uint32_t *imgIn, uint32_t *imgOut, int height, int width
 //end function: computeIntegralImg *********************************************
 
 /*** Recover any pixel in the image by using the integral image ****/
-double getImgIntPixel(double *img, int row, int col, int real_height, int real_width)
+__host__ __device__ float getImgIntPixel(float *img, int row, int col, int real_height, int real_width)
 {
-	double pval = 0.0;
+	float pval = 0.0;
 
 	if ((row == 0) && (col == 0))
 	{
@@ -592,9 +681,9 @@ double getImgIntPixel(double *img, int row, int col, int real_height, int real_w
 //end function: getImgIntPixel *************************************************
 
 /*** Compute any rectangle sum from integral image ****/
-double computeArea(double *img, int row, int col, int height, int width, int real_height, int real_width)
+__host__ __device__ float computeArea(float *img, int row, int col, int height, int width, int real_height, int real_width)
 {
-	double sum = 0.0;
+	float sum = 0.0;
 	int cornerComb = 0;
 
   // rectangle = upper-left corner pixel of the image
@@ -608,7 +697,7 @@ double computeArea(double *img, int row, int col, int height, int width, int rea
 	{
 		if ((width == 1) && (height == 1))
 		{
-			sum = getImgIntPixel((double *)img, row, col, real_height, real_width);
+			sum = getImgIntPixel((float *)img, row, col, real_height, real_width);
 			return sum;        
 		}
     // map upper-left corner of rectangle possible combinations        
@@ -657,7 +746,7 @@ double computeArea(double *img, int row, int col, int height, int width, int rea
 			}
 			default:
 			{
-				TRACE_INFO(("Error: \" This case is impossible!!!\"\n"));
+				//TRACE_INFO(("Error: \" This case is impossible!!!\"\n"));
 				break;
 			}
 		}
@@ -673,7 +762,7 @@ double computeArea(double *img, int row, int col, int height, int width, int rea
 
 /*** Compute parameters for each rectangle in a feature: 
 ****        upper-left corner, width, height, sign       ****/
-void getRectangleParameters(CvHaarFeature *f, int iRectangle, int nRectangles, double scale, int rOffset, int cOffset, int *row, int *col, int *height, int *width)
+__host__ __device__ void getRectangleParameters(CvHaarFeature *f, int iRectangle, int nRectangles, float scale, int rOffset, int cOffset, int *row, int *col, int *height, int *width)
 {
 	int r = 0, c = 0, h = 0, w = 0;
 
@@ -682,7 +771,7 @@ void getRectangleParameters(CvHaarFeature *f, int iRectangle, int nRectangles, d
 
 	if ((iRectangle > nRectangles) || (nRectangles < 2))
 	{
-		TRACE_INFO(("Problem with rectangle index %d/%d or number of rectangles.\n", iRectangle, nRectangles));
+		//TRACE_INFO(("Problem with rectangle index %d/%d or number of rectangles.\n", iRectangle, nRectangles));
 		return;
 	}
 
@@ -798,7 +887,7 @@ void getRectangleParameters(CvHaarFeature *f, int iRectangle, int nRectangles, d
 //end function: getRectangleParameters *****************************************
 
 /*** Re-create feature structure from rectangle coordinates and feature type (test function!) ****/
-void writeInFeature(int rowVect[4], int colVect[4], int hVect[4], int wVect[4], float weightVect[4], int nRects, CvHaarFeature *f_scaled)
+__host__ __device__ void writeInFeature(int rowVect[4], int colVect[4], int hVect[4], int wVect[4], float weightVect[4], int nRects, CvHaarFeature *f_scaled)
 {
 	f_scaled->rect[1].r.width = wVect[1];
 	f_scaled->rect[1].r.height = hVect[1];
@@ -889,7 +978,7 @@ void writeInFeature(int rowVect[4], int colVect[4], int hVect[4], int wVect[4], 
 //end function: writeInFeature *************************************************
 
 /*** Compute feature value (this is the core function!) ****/
-void computeFeature(double *img, double *imgSq, CvHaarFeature *f, double *featVal, int irow, int icol, int height, int width, double scale, float scale_correction_factor, CvHaarFeature *f_scaled, int real_height, int real_width)
+__host__ __device__ void computeFeature(float *img, float *imgSq, CvHaarFeature *f, float *featVal, int irow, int icol, int height, int width, float scale, float scale_correction_factor, CvHaarFeature *f_scaled, int real_height, int real_width)
 {
 	int nRects = 0;
 	int col = 0;
@@ -897,21 +986,22 @@ void computeFeature(double *img, double *imgSq, CvHaarFeature *f, double *featVa
 	int wRect = 0;
 	int hRect = 0;
 	int i = 0;
-	int rectArea = 0;
+	//int rectArea = 0;
 	int colVect[4] = {0};
 	int rowVect[4] = {0};
 	int wVect[4] = {0};
 	int hVect[4] = {0};
 
-	float w1 = 0.0, w1_orig = 0.0;
+	float w1 = 0.0; 
+	//float w1_orig = 0.0;
 	float rectWeight[4] = {0};
 
-	double val = 0.0;
-	double s[N_RECTANGLES_MAX] = {0};
+	float val = 0.0;
+	float s[N_RECTANGLES_MAX] = {0};
 
 	*featVal = 0.0;
 
-	w1_orig = f->rect[0].weight;
+	//w1_orig = f->rect[0].weight;
 	w1 = f->rect[0].weight * scale_correction_factor;
 
   // Determine feature type (number of rectangles) according to weight
@@ -964,8 +1054,8 @@ void computeFeature(double *img, double *imgSq, CvHaarFeature *f, double *featVa
 	{
 		s[i] = 0.0; 
 		getRectangleParameters(f, i, nRects, scale, irow, icol, &row, &col, &hRect, &wRect);
-		s[i] = computeArea((double *)img, row, col, hRect, wRect, real_height, real_width);
-		rectArea = hRect*wRect;
+		s[i] = computeArea((float *)img, row, col, hRect, wRect, real_height, real_width);
+		//rectArea = hRect*wRect;
 
 		if (fabs(rectWeight[i]) > 0.0)
 		{
@@ -980,25 +1070,25 @@ void computeFeature(double *img, double *imgSq, CvHaarFeature *f, double *featVa
 //end function: computeFeature *************************************************
 
 /*** Calculate the Variance ****/
-double computeVariance(double *img, double *imgSq, int irow, int icol, int height, int width, int real_height, int real_width)
+__host__ __device__ float computeVariance(float *img, float *imgSq, int irow, int icol, int height, int width, int real_height, int real_width)
 {
 	int nPoints = 0;
 
-	double s1 = 0.0;
-	double s2 = 0.0;
-	double f1 = 0.0;
-	double f2 = 0.0;
-	double varFact = 0.0;
+	float s1 = 0.0;
+	float s2 = 0.0;
+	float f1 = 0.0;
+	float f2 = 0.0;
+	float varFact = 0.0;
 
 	nPoints = height*width;
 
-	s1 = (double)computeArea((double *)img, irow, icol, height, width, real_height, real_width);
-	s2 = (double)computeArea((double *)imgSq, irow, icol, height, width, real_height, real_width);
+	s1 = (float)computeArea((float *)img, irow, icol, height, width, real_height, real_width);
+	s2 = (float)computeArea((float *)imgSq, irow, icol, height, width, real_height, real_width);
 
 	if(nPoints != 0)
 	{
-		f1 = (double)(s1/nPoints);
-		f2 = (double)(s2/nPoints);
+		f1 = (float)(s1/nPoints);
+		f2 = (float)(s2/nPoints);
 	}
 
 	if(f1*f1 > f2)
@@ -1017,76 +1107,133 @@ double computeVariance(double *img, double *imgSq, int irow, int icol, int heigh
 /*** Allocate one dimension integer pointer ****/
 uint32_t *alloc_1d_uint32_t(int n)
 {
-	uint32_t *new;
 
-	new = (uint32_t *) malloc ((unsigned) (n * sizeof (uint32_t)));
-	if (new == NULL) {
+	uint32_t *new_variable = NULL;
+
+	new_variable = (uint32_t *) malloc ((unsigned) (n * sizeof (uint32_t)));
+	if (new_variable == NULL) {
 		TRACE_INFO(("ALLOC_1D_UINT_32T: Couldn't allocate array of integer\n"));
 		return (NULL);
 	}
-	return (new);
+	return (new_variable);
+
 }
 //end function: alloc_1d_uint32_t **********************************************
 
-/*** Allocate one dimension double pointer ****/
-double *alloc_1d_double(int n)
-{
-	double *new;
 
-	new = (double *) malloc ((unsigned) (n * sizeof (double)));
-	if (new == NULL) {
-		TRACE_INFO(("ALLOC_1D_DOUBLE: Couldn't allocate array of integer\n"));
+uint32_t *cuda_alloc_1d_uint32_t(int n)
+{
+	uint32_t *dev_new_variable = NULL;
+
+        CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_new_variable, (unsigned) (n * sizeof (uint32_t))));
+        ERROR_CHECK
+
+	if (dev_new_variable == NULL) {
+                TRACE_INFO(("ALLOC_1D_UINT_32T: Couldn't allocate array of integer in the GPU\n"));
+                return (NULL);
+        }
+
+        return (dev_new_variable);
+}
+
+
+/*** Allocate one dimension float pointer ****/
+float *alloc_1d_float(int n)
+{
+
+	float *new_variable;
+
+	new_variable = (float *) malloc ((unsigned) (n * sizeof (float)));
+	if (new_variable == NULL) {
+		TRACE_INFO(("ALLOC_1D_DOUBLE: Couldn't allocate array of float\n"));
 		return (NULL);
 	}
-	return (new);
+	return (new_variable);
+
 }
-//end function: alloc_1d_double ************************************************
+//end function: alloc_1d_float ************************************************
+
+float *cuda_alloc_1d_float(int n)
+{
+
+	float *dev_new_variable;
+
+        CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_new_variable, (unsigned) (n * sizeof (float))));
+        ERROR_CHECK
+
+	if (dev_new_variable == NULL) {
+                TRACE_INFO(("ALLOC_1D_DOUBLE: Couldn't allocate array of float in the GPU\n"));
+                return (NULL);
+        }
+        return (dev_new_variable);
+}
 
 /*** Allocate 2d array of integers ***/
 uint32_t **alloc_2d_uint32_t(int m, int n)
 {
 	int i;
-	uint32_t **new;
+	uint32_t **new_variable;
 
-	new = (uint32_t **) malloc ((unsigned) (m * sizeof (uint32_t *)));
-	if (new == NULL) {
+	new_variable = (uint32_t **) malloc ((unsigned) (m * sizeof (uint32_t *)));
+	if (new_variable == NULL) {
 		TRACE_INFO(("ALLOC_2D_UINT_32T: Couldn't allocate array of integer ptrs\n"));
 		return (NULL);
 	}
 
 	for (i = 0; i < m; i++) {
-		new[i] = alloc_1d_uint32_t(n);
+		new_variable[i] = alloc_1d_uint32_t(n);
 	}
 
-	return (new);
+	return (new_variable);
 }
 //end function: alloc_2d_uint32_t **********************************************
 
 /* Draws simple or filled square */
-void raster_rectangle(uint32_t* img, int x0, int y0, int radius, int real_width)
+__host__ __device__ void raster_rectangle(uint32_t* img, int x0, int y0, int radius, int real_width)
 {
 	int i=0;
 	for(i=-radius/2; i<radius/2; i++)
 	{
-		assert((i + x0 + (y0 + (int)(radius)) * real_width)>0);
-		assert((i + x0 + (y0 + (int)(radius)) * real_width)<(480*640));
-		assert((i + x0 + (y0 - (int)(radius)) * real_width)>0);
-		assert((i + x0 + (y0 - (int)(radius)) * real_width)<(480*640));
 		img[i + x0 + (y0 + (int)(radius)) * real_width]=255;
 		img[i + x0 + (y0 - (int)(radius)) * real_width]=255;
 	}
 	for(i=-(int)(radius); i<(int)(radius); i++)
 	{
-		assert(((x0 + (int)(radius/2)) + (y0+i) * real_width)>0);
-		assert(((x0 + (int)(radius/2)) + (y0+i) * real_width)<(480*640));
-		assert(((x0 - (int)(radius/2)) + (y0+i) * real_width)>0);
-		assert(((x0 - (int)(radius/2)) + (y0+i) * real_width)<(480*640));
 		img[(x0 + (int)(radius/2)) + (y0+i) * real_width]=255;
 		img[(x0 - (int)(radius/2)) + (y0+i) * real_width]=255;
 	}	
 }
 //end function: raster_rectangle **************************************************
 
+float memcmp_for_float(const float *s1, const float *s2, size_t n_floats)
+{
+	int i=0;
+
+	while(i++<n_floats)
+	{
+		if((float)*s1 == (float)*s2)
+		{ 
+			s1++;
+			s2++;
+			continue;
+		}
+		else
+		{
+			printf("\ns1: %f", *s1);			
+			printf("\ns2: %f", *s2);			
+			printf("\ns1-s2: %f", *s1-*s2);			
+			printf("\ni: %d\n", i);			
+
+			if(*s1<*s2)	
+				return -1;
+			else
+				return 1;
+		}
+
+	}
+		
+	return 0;
+}
 
 /* ********************************** MAIN ********************************** */
 int main( int argc, char** argv )
@@ -1099,6 +1246,10 @@ int main( int argc, char** argv )
 	CvHaarClassifierCascade* cascade_scaled = NULL;
 	CvHaarFeature *feature_scaled = NULL;
 
+
+	CvHaarClassifierCascade* dev_cascade = NULL;
+
+
 	char *imgName = NULL;
 	char *haarFileName = NULL;
 	char result_name[MAX_BUFFERSIZE]={0};
@@ -1107,15 +1258,73 @@ int main( int argc, char** argv )
 	uint32_t *imgInt = NULL;
 	uint32_t *imgSq = NULL;
 	uint32_t *imgSqInt = NULL;
-	uint32_t **result2 = NULL;
+	uint32_t *result2 = NULL;
 
+	uint32_t *cuda_imgInt = NULL;
+	uint32_t *cuda_imgInt2 = NULL;
+	uint32_t *cuda_imgInt3 = NULL;
 
-	uint32_t **goodcenterX=NULL;
-	uint32_t **goodcenterY=NULL;
-	uint32_t **goodRadius=NULL;
+	float *cuda_imgInt_f = NULL;
+	float *cuda_imgSqInt_f = NULL;
+	
+
+	uint32_t *dev_img = NULL;
+	uint32_t *dev_imgInt = NULL;
+	uint32_t *dev_imgSq = NULL;
+	uint32_t *dev_imgSqInt = NULL;	
+	float *dev_imgInt_f = NULL;
+	float *dev_imgSqInt_f = NULL;
+	uint32_t *dev_goodPoints = NULL;
+	uint32_t *dev_goodcenterX = NULL;
+	uint32_t *dev_goodcenterY = NULL;
+	uint32_t *dev_goodRadius = NULL;
+	uint32_t *dev_nb_obj_found2 = NULL;
+	uint32_t *dev_position = NULL;
+	uint32_t *dev_result2 = NULL;
+
+	Lock lock;
+
+	int *dev_foundObj = NULL;
+	
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_foundObj, (sizeof (int))));
+        ERROR_CHECK
+
+        if (dev_foundObj == NULL) {
+               TRACE_INFO(("CUDA_ALLOC_FOUND_OBJ: Couldn't allocate foundObj GPU\n"));
+               exit(-1);
+        }
+	
+	int *dev_scale_index_found = NULL;
+	
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_scale_index_found, (sizeof (int))));
+        ERROR_CHECK
+
+        if (dev_scale_index_found == NULL) {
+               TRACE_INFO(("CUDA_ALLOC_SCALE_INDEX_FOUND: Couldn't allocate scale_index_found GPU\n"));
+               exit(-1);
+        }
+	
+	CUDA_SAFE_CALL(cudaMemset(dev_scale_index_found, 0, sizeof(int)));
+	ERROR_CHECK
+
+	int *dev_nb_obj_found = NULL;
+	
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_nb_obj_found, (sizeof (int))));
+        ERROR_CHECK
+
+        if (dev_nb_obj_found == NULL) {
+               TRACE_INFO(("CUDA_ALLOC_NB_OBJ_FOUND: Couldn't allocate dev_nb_obj_found GPU\n"));
+               exit(-1);
+        }
+
+	int nb_obj_found=0;	
+
+	uint32_t *goodcenterX=NULL;
+	uint32_t *goodcenterY=NULL;
+	uint32_t *goodRadius=NULL;
 	uint32_t *nb_obj_found2=NULL;
 
-	uint32_t *position= NULL;
+	//uint32_t *position= NULL;
 	uint32_t *goodPoints = NULL;
 
 	// Counter Declaration 
@@ -1127,57 +1336,76 @@ int main( int argc, char** argv )
 	int detSizeC = 0; 
 	int tileWidth = 0;
 	int tileHeight = 0;
-	int irow = 0;
-	int icol = 0;
 	int nStages = 0; 
 	int foundObj = 0;
 	int nTileRows = 0;
 	int nTileCols = 0;
-	int iStage = 0;
-	int iNode = 0;
-	int nNodes = 0;
-	int pointCount = 0;
-	int i = 0, j = 0;
 	
+	//int i = 0, j = 0;
 	
 	int real_height = 0, real_width = 0;
 	int scale_index_found=0;
-	int threshold_X=0;
-	int threshold_Y=0;
-	int nb_obj_found=0;
+
+	int *dev_count = 0;
+	//int count = 0;
+
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_count, (sizeof (int))));
+        ERROR_CHECK
+
+        if (dev_count == NULL) {
+               TRACE_INFO(("CUDA_ALLOC_DEV_COUNT: Couldn't allocate dev_count in GPU\n"));
+               exit(-1);
+        }
+
+	CUDA_SAFE_CALL(cudaMemset(dev_count, 0, sizeof(int)));
+        ERROR_CHECK
 
 
-	int count = 0;
-	int offset_X = 0, offset_Y = 0;
 
-	// Threshold Declaration 
-	float thresh = 0.0;
-	float a = 0.0;
-	float b = 0.0;
+
+//////////////////////////////////////////////////////////////////
+
+
+	//Counter for raster_detection
+	
+	/*
+	int *dev_counter_raster = 0;
+	int raster_counter;
+
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_counter_raster, (sizeof (int))));
+        ERROR_CHECK
+
+        if (dev_counter_raster == NULL) {
+               TRACE_INFO(("CUDA_ALLOC_DEV_COUNT: Couldn't allocate dev_counter_raster in GPU\n"));
+               exit(-1);
+        }
+
+	CUDA_SAFE_CALL(cudaMemset(dev_counter_raster, 0, sizeof(int)));
+	ERROR_CHECK
+	*/
+
+////////////////////////////////////////////////////////////
+
+
+
+	//int offset_X = 0, offset_Y = 0;
 	float scale_correction_factor = 0.0;
 	
-	// /**! Brief: For the circle calculation */
-	float centerX_tmp=0.0;
-	float centerY_tmp=0.0;
-	float radius_tmp=0.0;
-	float centerX=0.0;
-	float centerY=0.0;
-	float radius=0.0;
-
 	// Factor Declaration 
-	double scaleFactorMax = 0.0;
-	double scaleStep = 1.1; // 10% increment of detector size per scale. Change this value to test other increments 
-	double scaleFactor = 0.0;
-	double varFact = 0.0;
-	double sumClassif = 0.0;
-	double featVal = 0.0;
-	double detectionTime = 0.0;
+	float scaleFactorMax = 0.0;
+	float scaleStep = 1.1; // 10% increment of detector size per scale. Change this value to test other increments 
+	float scaleFactor = 0.0;
+	
+	float detectionTime = 0.0;
 
 	// Integral Image Declaration 
-	double *imgInt_f = NULL;
-	double *imgSqInt_f = NULL;
+	float *imgInt_f = NULL;
+	float *imgSqInt_f = NULL;
 
-	int rrr=0;	
+	//Declare timer
+	unsigned int timer_compute=0;
+
+	int block_size = 16;
 
 	if (argc <= 2 || argc > 3)
 	{
@@ -1189,6 +1417,10 @@ int main( int argc, char** argv )
 	imgName=argv[1];
 	haarFileName=argv[2];
 
+	TRACE_INFO(("\n-------------------------------------------- \nSmart Camera application running.... \n-------------------------------------------- \n"));
+
+	// Start the clock counter 
+	start = clock();
 
 	// Get the Input Image informations 
 	getImgDims(imgName, &width, &height);
@@ -1198,15 +1430,39 @@ int main( int argc, char** argv )
 	real_width=width;
 
 	// Allocate the Cascade Memory 
-	cascade = allocCascade();
+
+
+/*	cascade = allocCascade();
 	cascade_scaled = allocCascade();
-	feature_scaled = malloc(sizeof(CvHaarFeature));
+*/	
+	cascade = allocCascade_continuous();
+	cascade_scaled = allocCascade_continuous(); 
+	feature_scaled = (CvHaarFeature *)malloc(sizeof(CvHaarFeature));
+
+	//Allocate the Cascade Memory for GPU
+	dev_cascade = cudaAllocCascade_continuous();
 
 	// Get the Classifier informations 
 	readClassifCascade(haarFileName, cascade, &detSizeR, &detSizeC, &nStages);
 
-	printf("detSizeR = %d\n", detSizeR);
-	printf("detSizeC = %d\n", detSizeC);
+	copyCascadeFromHostToDevice(dev_cascade, cascade);
+
+        CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
+        CUT_SAFE_CALL(cutStartTimer(timer_compute));
+
+	fix_links_cascade_continuous_memory<<<1,1>>>(dev_cascade);      
+	ERROR_CHECK
+
+        CUT_SAFE_CALL(cutStopTimer(timer_compute));
+
+        printf("Time after fixing the links of continuous memory cascade in GPGPU: %f (ms)\n",cutGetTimerValue(timer_compute));
+
+	TRACE_INFO(("\n-----------------------------------------------------\n"));
+	TRACE_INFO(("Classifier file input routine \n"));
+	TRACE_INFO(("-----------------------------------------------------\n\n"));
+	TRACE_INFO(("     Number of Stages = %d\n", nStages));
+	TRACE_INFO(("     Original Feature Height = %d\n", detSizeR));
+	TRACE_INFO(("     Original Feature Width = %d\n", detSizeC));
 
 	// Determine the Max Scale Factor
 	if (detSizeR != 0 && detSizeC != 0)
@@ -1219,63 +1475,149 @@ int main( int argc, char** argv )
 	imgInt=alloc_1d_uint32_t(width*height);
 	imgSq=alloc_1d_uint32_t(width*height);
 	imgSqInt=alloc_1d_uint32_t(width*height);
-	result2=alloc_2d_uint32_t(N_MAX_STAGES, width*height);
-	position=alloc_1d_uint32_t(width*height);
+	//result2=alloc_2d_uint32_t(nStages, width*height);
+	result2 = alloc_1d_uint32_t(nStages*width*height);
+	//position=alloc_1d_uint32_t(width*height);
 
-	printf("nStages: %d\n", nStages);
-	printf("NB_MAX_DETECTION: %d\n", NB_MAX_DETECTION);
+	//images returned from GPU
+	cuda_imgInt=alloc_1d_uint32_t(width*height);
+	cuda_imgInt2=alloc_1d_uint32_t(width*height);
+	cuda_imgInt3=alloc_1d_uint32_t(width*height);
 	
-	
-	//nstages
-	goodcenterX=alloc_2d_uint32_t(N_MAX_STAGES, NB_MAX_DETECTION);
-	goodcenterY=alloc_2d_uint32_t(N_MAX_STAGES, NB_MAX_DETECTION);
-	goodRadius=alloc_2d_uint32_t(N_MAX_STAGES, NB_MAX_DETECTION);
-	nb_obj_found2=alloc_1d_uint32_t(N_MAX_STAGES);
+	cuda_imgInt_f = alloc_1d_float(width*height);
+	cuda_imgSqInt_f = alloc_1d_float(width*height); 
 
+	//CUDA allocations
+	dev_img = cuda_alloc_1d_uint32_t(width*height);
+	dev_imgInt = cuda_alloc_1d_uint32_t(width*height);	
+	dev_imgSq = cuda_alloc_1d_uint32_t(width*height);
+	dev_imgSqInt = cuda_alloc_1d_uint32_t(width*height);
+	dev_goodPoints = cuda_alloc_1d_uint32_t(width*height);
+	dev_imgInt_f = cuda_alloc_1d_float(width*height);
+	dev_imgSqInt_f = cuda_alloc_1d_float(width*height);
+	dev_goodcenterX=cuda_alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
+	dev_goodcenterY=cuda_alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
+	dev_goodRadius=cuda_alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
+	dev_nb_obj_found2 = cuda_alloc_1d_uint32_t(nStages);
+	dev_position = cuda_alloc_1d_uint32_t(width*height);
+	dev_result2 = cuda_alloc_1d_uint32_t(nStages*width*height);
+
+	CUDA_SAFE_CALL(cudaMemset(dev_goodcenterX, 0, (sizeof(uint32_t)*nStages*NB_MAX_DETECTION)));
+	ERROR_CHECK
+
+	CUDA_SAFE_CALL(cudaMemset(dev_goodcenterY, 0, (sizeof(uint32_t)*nStages*NB_MAX_DETECTION)));
+	ERROR_CHECK
+
+	CUDA_SAFE_CALL(cudaMemset(dev_goodRadius, 0, (sizeof(uint32_t)*nStages*NB_MAX_DETECTION)));
+	ERROR_CHECK
+
+	CUDA_SAFE_CALL(cudaMemset(dev_nb_obj_found2, 0, (sizeof(uint32_t)*nStages)));
+	ERROR_CHECK
+
+	CUDA_SAFE_CALL(cudaMemset(dev_position, 0, (sizeof(uint32_t)*width*height)));
+	ERROR_CHECK
+
+	CUDA_SAFE_CALL(cudaMemset(dev_result2, 0, (sizeof(uint32_t)*nStages*width*height)));
+	ERROR_CHECK
+	
+
+	nb_obj_found2=alloc_1d_uint32_t(nStages);
+
+	goodcenterX=alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
+	goodcenterY=alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
+	goodRadius=alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
 
 	goodPoints=alloc_1d_uint32_t(width*height);
-	imgInt_f=alloc_1d_double(width*height);
-	imgSqInt_f=alloc_1d_double(width*height);
-
-	printf("Allocations finished!\n");
+	imgInt_f=alloc_1d_float(width*height);
+	imgSqInt_f=alloc_1d_float(width*height);
 
 	// load the Image in Memory 
 	load_image_check((uint32_t *)img, (char *)imgName, width, height);
-
-	printf("Load Image Done!\n");
-
-
-
-
-	// Compute the Interal Image 
-	computeIntegralImg((uint32_t *)img, (uint32_t *)imgInt, height, width);
-
-	// Calculate the Image square 
-	imgDotSquare((uint32_t *)img, (uint32_t *)imgSq, height, width);
-	/* Compute the Integral Image square */
-	computeIntegralImg((uint32_t *)imgSq, (uint32_t *)imgSqInt, height, width);
-
- start = clock();
-	// Copy the Image to float array 
-	imgCopy((uint32_t *)imgInt, (double *)imgInt_f, height, width);
-	imgCopy((uint32_t *)imgSqInt, (double *)imgSqInt_f, height, width);
-
-	printf("Done with integral image\n");
-
-	printf("scaleFactorMax = %f\n", scaleFactorMax);
-	printf("scaleStep = %f\n", scaleStep);
-	printf("nStages = %d\n", nStages);
 	
+
+	CUDA_SAFE_CALL(cudaMemcpy(dev_img, img, sizeof(uint32_t)*(width*height), cudaMemcpyHostToDevice));
+	ERROR_CHECK
+
+        dim3 block(block_size); 
+
+	//+++++++++++++++++++++ FOR THE ROWS THREAD IMPLEMENTATION +++++++
+	//This implementation works only for height multiple to block_size!
+	assert(height % block_size==0);
+        dim3 grid_row(height/block_size);   
+
+	//++++++++++++++++++++ FOR THE COLUMNS THREAD IMPLEMENTATION ++++
+	//This implementation works only for width multiple to block_size!
+	assert(width % block_size==0);
+	dim3 grid_column(width/block_size);
+
+/*
+	printf("Parameters for the kernels:\n");	
+        printf("  # of threads in a block: %d\n", block.x);
+        printf("  # of blocks in a grid (rows) : %d\n", grid_row.x);
+	printf("  # of blocks in a grid (cols) : %d\n", grid_column.x);
+*/
+
+	computeIntegralImgRowCuda<<<block,grid_row>>>((uint32_t *)dev_img, (uint32_t *)dev_imgInt, width);
+	ERROR_CHECK
+
+	computeIntegralImgColCuda<<<block,grid_column>>>((uint32_t *)dev_imgInt, width, height);      
+	ERROR_CHECK
+/*
+	//Square image computation with ROWS----------------------------
+
+        computeSquareImageCuda_rows<<<block, grid_row>>>((uint32_t *)dev_img, (uint32_t *)dev_imgSq, width);
+        ERROR_CHECK
+
+	//End of computation with ROWS----------------------------------
+*/	
+	//Square image computation with COLUMNS-------------------------
+
+	computeSquareImageCuda_cols<<<block, grid_column>>>((uint32_t *)dev_img, (uint32_t *)dev_imgSq, height, width);
+        ERROR_CHECK
+
+	//End of computation with COLUMNS-------------------------------
+
+        computeIntegralImgRowCuda<<<block,grid_row>>>((uint32_t *)dev_imgSq, (uint32_t *)dev_imgSqInt, width);
+        ERROR_CHECK
+
+        computeIntegralImgColCuda<<<block,grid_column>>>((uint32_t *)dev_imgSqInt, width, height);
+        ERROR_CHECK
+
+
+/*-------------------------------------------------------------------------------------------------------*/
+/*	CLASSIFICATION PHASE		*/	
+/*-------------------------------------------------------------------------------------------------------*/
+
+
+	// Copy the Image to float array 
+	imgCopy((uint32_t *)imgInt, (float *)imgInt_f, height, width);
+	imgCopy((uint32_t *)imgSqInt, (float *)imgSqInt_f, height, width);
+
+	imgCopyCuda<<<(width*height)/128, 128>>>((uint32_t *)dev_imgInt, (float *)dev_imgInt_f, height, width);
+        ERROR_CHECK
+
+	imgCopyCuda<<<(width*height)/128, 128>>>((uint32_t *)dev_imgSqInt, (float *)dev_imgSqInt_f, height, width);	
+        ERROR_CHECK
+
+	
+	TRACE_INFO(("\n-----------------------------------------------------\n"));
+	TRACE_INFO(("Processing scales routine \n"));
+	TRACE_INFO(("-----------------------------------------------------\n\n"));
+
+int scale_num = 0;
 
 	// Launch the Main Loop 
 	for (scaleFactor = 1; scaleFactor <= scaleFactorMax; scaleFactor *= scaleStep)
 	{
-		for (irow = 0; irow < real_height; irow ++)
-			for (icol = 0; icol < real_width; icol++)
-		{
-			goodPoints[irow*real_width+icol] = 255;
-		}
-//		TRACE_INFO(("Processing scale %f/%f\n", scaleFactor, scaleFactorMax));
+		scale_num++;
+
+		int num_pixels = real_width*real_height;
+		
+		//Initializing the goodPoints
+
+		initializeGoodPointsCuda<<<(real_width*real_height)/128, 128>>>((uint32_t *)dev_goodPoints, num_pixels);
+        	ERROR_CHECK
+
 		tileWidth = (int)floor(detSizeC * scaleFactor + 0.5);
 		tileHeight = (int)floor(detSizeR * scaleFactor + 0.5);
 		rowStep = max(2, (int)floor(scaleFactor + 0.5));
@@ -1287,240 +1629,152 @@ int main( int argc, char** argv )
 		// compute number of tiles: difference between the size of the Image and the size of the Detector 
 		nTileRows = height-tileHeight;
 		nTileCols = width-tileWidth;
+
+		foundObj = 0;
 		
-		printf("Inside scale for and before stage for!\n");
 
-		// Operation used for every Stage of the Classifier 
-		for (iStage = 0; iStage < nStages; iStage++)
-		{
-			nNodes = cascade->stageClassifier[iStage].count;
-			foundObj = 0;
+CUDA_SAFE_CALL(cudaMemcpy(dev_foundObj, &foundObj, sizeof(int), cudaMemcpyHostToDevice));
+ERROR_CHECK
 
-			for (irow = 0; irow < nTileRows; irow+=rowStep)
-			{
-				for (icol = 0; icol < nTileCols; icol+=colStep)
-				{
-					if (goodPoints[irow*real_width+icol])
-					{
-						sumClassif = 0.0;
-						/* Operation used for every Stage of the Classifier */
-						varFact=computeVariance((double *)imgInt_f, (double *)imgSqInt_f, irow, icol, tileHeight, tileWidth, real_height, real_width);
+int irowiterations = 0;
+int icoliterations = 0;
+int number_of_threads = 0;
 
-						if (varFact < 10e-15)
-						{
-							// this should not occur (possible overflow BUG)
-							varFact = 1.0; 
-							goodPoints[irow*real_width+icol] = 0; 
-							continue;
-						}
-						else
-						{
-							// Get the standard deviation 
-							varFact = sqrt(varFact);
-						}
-						pointCount = 0;
-						for (iNode = 0; iNode < nNodes; iNode++)
-						{
-							computeFeature((double *)imgInt_f, (double *)imgSqInt_f, cascade->stageClassifier[iStage].classifier[iNode].haarFeature,
-											&featVal, irow, icol, tileHeight, tileWidth, scaleFactor, scale_correction_factor, feature_scaled, real_height, real_width);
-							// Get the thresholds for every Node of the stage 
-							thresh = cascade->stageClassifier[iStage].classifier[iNode].threshold;
-							a = cascade->stageClassifier[iStage].classifier[iNode].left;
-							b = cascade->stageClassifier[iStage].classifier[iNode].right;
-							sumClassif += (featVal < (double)(thresh*varFact) ? a : b);
-						}
-						// Update goodPoints according to detection threshold 
-						if (sumClassif < cascade->stageClassifier[iStage].threshold)
-						{
-							goodPoints[irow*real_width+icol] = 0;
-						}	  
-						else
-						{	
-							if (iStage == nStages - 1)
-							{ 
-								foundObj++;
-							}
-						}	  
-					}
-				}
-			}
-		}
+irowiterations = (int)ceilf((float)nTileRows/rowStep);
+icoliterations = (int)ceilf((float)nTileCols/colStep);
 
-	printf("Finished founds\n");	
+number_of_threads = irowiterations*icoliterations;
 
-	// ************************************************************* 
-	// One scale done, post-process the results 
-	// ************************************************************* 
-	
-		// Determine used object 
-		if (foundObj)
-		{
-			nb_obj_found=0;
+subwindow_find_candidates<<<(number_of_threads+127)/128,128>>>( nStages, dev_cascade, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, dev_imgInt_f, dev_imgSqInt_f, tileHeight, tileWidth, real_height, scaleFactor, scale_correction_factor, dev_foundObj, dev_nb_obj_found);
 
-			// Determine the position of the object detection 
-			for (irow=0; irow<nTileRows; irow+=rowStep)
-			{
-				for (icol=0; icol<nTileCols; icol+=colStep)
-				{
-					// Only the detection is used 
-					if (goodPoints[irow*real_width+icol])
-					{
-						// Calculation of the Center of the detection 
-						centerX=(((tileWidth-1)*0.5+icol));
-						centerY=(((tileHeight-1)*0.5+irow));
-						
-						//Calculation of the radius of the circle surrounding object 
-						radius = sqrt(pow(tileHeight-1, 2)+pow(tileWidth-1, 2))/2;
+ERROR_CHECK
 
-						//Threshold calculation: proportionnal to the size of the Detector 
-						threshold_X=(int)((tileHeight-1)/(2*scaleFactor));
-						threshold_Y=(int)((tileWidth-1)/(2*scaleFactor));
 
-						//Reduce number of detections in a given range 
-						if(centerX > (centerX_tmp+threshold_X) || centerX < (centerX_tmp-threshold_X) || (centerY > centerY_tmp+threshold_Y) || centerY < (centerY_tmp-threshold_Y))
-						{
-							centerX_tmp=centerX;
-							centerY_tmp=centerY;
-							radius_tmp=radius;
-							// Get only the restricted Good Points and get back the size for each one 
-							goodcenterX[scale_index_found][nb_obj_found]=centerX_tmp;
-							goodcenterY[scale_index_found][nb_obj_found]=centerY_tmp;
-							goodRadius[scale_index_found][nb_obj_found]=radius_tmp;
+subwindow_examine_candidates<<<(number_of_threads+127)/128,128>>>(lock, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, tileHeight, tileWidth, scaleFactor, dev_foundObj, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_scale_index_found, dev_nb_obj_found, dev_nb_obj_found2);
 
-							nb_obj_found=nb_obj_found + 1;
-							// store number of detections at each scale
-							nb_obj_found2[scale_index_found]=nb_obj_found; 
-						}
-					}
-				}
-			}
-			scale_index_found++;
-		}
+ERROR_CHECK
 
-//printf("ScaleFactor: %f\n", scaleFactor);
-/*                            
-for(rrr=0; rrr<nStages; rrr++)
-{                          
-      printf("Number: %d --- nb_obj_found=%d\n", rrr,  nb_obj_found);
+CUDA_SAFE_CALL(cudaMemcpy(&nb_obj_found, dev_nb_obj_found, sizeof(int), cudaMemcpyDeviceToHost));
+ERROR_CHECK
+
+printf("ScaleFactor: %f\n", scaleFactor);
+
+for(int i=0; i<nStages; i++)
+{
+	printf("Number: %d --- nb_obj_found=%d\n", i,  nb_obj_found);
 }
+
+
+	}	
+	// Done processing all scales 
+	
+CUDA_SAFE_CALL(cudaMemcpy(&scale_index_found, dev_scale_index_found, sizeof(int), cudaMemcpyDeviceToHost));
+ERROR_CHECK
+
+	// Timer end 
+	end = clock();
+
+	// Timer calculation (for detection time) and convert in ms 
+	detectionTime = (float)(end-start)/CLOCKS_PER_SEC * 1000;
+
+	TRACE_INFO(("\nFinished processing tiles up to (%d/%d,%d/%d) position. Detection time = %f ms.\n",
+				nTileRows-1, height, nTileCols-1, width, detectionTime));
+
+
+	if (scale_index_found)
+		TRACE_INFO(("\n---------------------------------------------\nHandling multiple detections\n---------------------------------------------\n"));
+
+/*KERNEL ONE*/
+
+kernel_one<<<1,scale_index_found>>>(dev_scale_index_found, dev_nb_obj_found2);
+ERROR_CHECK
+
+/*KERNEL TWO*/
+
+kernel_two_alt<<<1,1>>>(dev_scale_index_found, dev_nb_obj_found2, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_position, dev_count);
+ERROR_CHECK
+
+/*KERNEL THREE*/
+
+int irowiterations = 0;
+int icoliterations = 0;
+int number_of_threads = 0;
+
+irowiterations = (int)ceilf((float)NB_MAX_POINTS/3);
+icoliterations = (int)ceilf((float)NB_MAX_POINTS/3);
+
+number_of_threads = irowiterations*icoliterations;
+
+//kernel_three<<<(number_of_threads+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, real_height, dev_counter_raster);
+kernel_three<<<(number_of_threads+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, real_height);
+ERROR_CHECK
+
+/*
+CUDA_SAFE_CALL(cudaMemcpy(&raster_counter, dev_counter_raster, sizeof(int), cudaMemcpyDeviceToHost));
+ERROR_CHECK
+printf("\nraster_counter = %d\n", raster_counter);
+*/
+
+/*KERNEL DRAW DETECTION*/
+
+kernel_draw_detection<<<(irowiterations+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, dev_result2, width*height);
+ERROR_CHECK
+
+/*
+kernel_draw_detection<<<(irowiterations+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, dev_result2, width*height, dev_counter_raster);
+ERROR_CHECK
 */
 
 
-	printf("Finished founds processing\n");
+/*KERNEL HIGHLIGHT*/
 
-	}
-	// Done processing all scales 
+number_of_threads = real_width * real_height;
+
+kernel_highlight_detection<<<(number_of_threads+127)/128,128>>>(dev_img, dev_scale_index_found, real_width, real_height, dev_result2, width*height);
+ERROR_CHECK
+
+CUDA_SAFE_CALL(cudaMemcpy(result2, dev_result2, sizeof(uint32_t)*nStages*width*height, cudaMemcpyDeviceToHost));
+ERROR_CHECK
+
+/*KERNEL FINALNB*/
+
+int finalNb = 0;
 	
+int *dev_finalNb = NULL;
 
-	printf("Finished scales\n");
-	// Multi-scale fusion and detection display (note: only a simple fusion scheme implemented
-	for(i=0; i<scale_index_found; i++)
-	{
-		nb_obj_found2[scale_index_found]=max(nb_obj_found2[scale_index_found], nb_obj_found2[i]);
-	}
+CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_finalNb, (sizeof (int))));
+ERROR_CHECK
 
-	// Keep the position of each circle from the bigger to the smaller 
-	for(i=scale_index_found; i>=0; i--)
-	{
-		for(j=0; j<nb_obj_found2[scale_index_found]; j++)
-		{
-			// Normally if (goodcenterX=0 so goodcenterY=0) or (goodcenterY=0 so goodcenterX=0) 
-			if(goodcenterX[i][j] !=0 || goodcenterY[i][j] !=0)
-			{
-				position[count]=goodcenterX[i][j];
-				position[count+1]=goodcenterY[i][j];
-				position[count+2]=goodRadius[i][j];
-				count=count+3;
-			}
-		}
-	}
+if (dev_finalNb == NULL) {
+       TRACE_INFO(("CUDA_ALLOC_FINALNB: Couldn't allocate finalNb in GPU\n"));
+       exit(-1);
+}
+
+CUDA_SAFE_CALL(cudaMemset(dev_finalNb, 0, sizeof(int)));
+ERROR_CHECK
+
+kernel_finalNb<<<(irowiterations+127)/128,128>>>(dev_finalNb, dev_position);
+ERROR_CHECK
+
+CUDA_SAFE_CALL(cudaMemcpy(&finalNb, dev_finalNb, sizeof(int), cudaMemcpyDeviceToHost));
+ERROR_CHECK
 
 
-	// Create the offset for X and Y 
-	offset_X=(int)(real_width/(float)(scale_index_found*1.2));
-	offset_Y=(int)(real_height/(float)(scale_index_found*1.2));
+	//sprintf(result_name, "result_%d.pgm", finalNb);
 
-	// Delete detections which are too close 
-	for(i=0; i<NB_MAX_POINTS; i+=3)
-	{
-		for(j=3; j<NB_MAX_POINTS-i; j+=3)
-		{
-			if(position[i] != 0 && position[i+j] != 0 && position[i+1] != 0 && position[i+j+1] != 0)
-			{
-				if(offset_X >= abs(position[i]-position[i+j]) && offset_Y >= abs(position[i+1]-position[i+j+1]))
-				{
-					printf("Mphke sta positions!!!\n");
-			
-					position[i+j] = 0;
-					position[i+j+1] = 0;
-					position[i+j+2] = 0;
-				}
-			}
-		}
-	}	
-
-	// Draw detection
-	for(i=0; i<NB_MAX_POINTS; i+=3)
-	{
-		if(position[i] != 0 && position[i+1] != 0 && position[i+2] != 0)
-		{
-			printf("Mphke sto if...twra raster_rectangle\n");	
-
-			raster_rectangle(result2[scale_index_found], (int)position[i], (int)position[i+1], (int)(position[i+2]/2), real_width);
-		}
-		
-	}
-
-	// Re-build the result image with highlighted detections
-	for(i=0; i<real_height; i++)
-	{
-		for(j=0; j<real_width; j++)
-		{
-			if(result2[scale_index_found][i*real_width+j]!= 255)
-			{
-				result2[scale_index_found][i*real_width+j] = img[i*real_width+j];
-			}
-		}
-	}
-	
-	int finalNb = 0;
-	
-	for(i=0; i<NB_MAX_POINTS; i+=3)
-	{
-		if (position[i]!=0) 
-		{
-			finalNb++;
-		}
-	}
-
-
-
-
-printf("END\n");
-
-
-end = clock();
-detectionTime = (double)(end-start)/CLOCKS_PER_SEC * 1000;
-TRACE_INFO(("\nExecution time = %f ms.\n", detectionTime));
-
-
-
-
-
-
-
-
-
-	
-	sprintf(result_name, "result_%d.pgm", finalNb);
+	sprintf(result_name, "result_%s.pgm", imgName);
 
 	// Write the final result of the detection application 
-	imgWrite((uint32_t *)result2[scale_index_found], result_name, height, width);
+	imgWrite((uint32_t *)&(result2[scale_index_found*width*height]), result_name, height, width);
 	
 	
-	// FREE ALL the allocations 
-	releaseCascade(cascade);
-	releaseCascade(cascade_scaled);
+	// FREE ALL the allocations
+ 
+	releaseCascade_continuous(cascade);	
+	releaseCascade_continuous(cascade_scaled);
+	
+	//releaseCascade(cascade);
+	//releaseCascade(cascade_scaled);
 	free(feature_scaled);
 	free(img);
 	free(imgInt);
@@ -1533,9 +1787,15 @@ TRACE_INFO(("\nExecution time = %f ms.\n", detectionTime));
 	free(goodRadius);
 	free(nb_obj_found2);
 	free(goodPoints);
-	free(imgInt_f);
-	free(imgSqInt_f);
+	
+	free(cuda_imgInt);
+	free(cuda_imgInt2);
+	free(cuda_imgInt3);
+	free(cuda_imgInt_f);
+	free(cuda_imgSqInt_f);
+
 
 	TRACE_INFO(("\n FOUND %d OBJECTS \n",finalNb));
+	TRACE_INFO(("\n---------------------------------------------------------- \nSmart Camera application ended OK! Check %s file! \n---------------------------------------------------------- \n",result_name));
 	return 0;
 }
