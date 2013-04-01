@@ -1,3 +1,28 @@
+/*
+##############################################################################
+## THE PROGRAM IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
+## OF ANY KIND, EITHER EXPRESS OR IMPLIED INCLUDING, WITHOUT LIMITATION, 
+## ANY WARRANTIES ON ITS, NON-INFRINGEMENT, MERCHANTABILITY, SECURED, 
+## INNOVATIVE OR RELEVANT NATURE, FITNESS FOR A PARTICULAR PURPOSE OR 
+## COMPATIBILITY WITH ANY EQUIPMENT OR SOFTWARE.
+## In the event of publication, the following notice is applicable:
+##
+##              (C) COPYRIGHT 2010 THALES RESEARCH & TECHNOLOGY
+##                            ALL RIGHTS RESERVED
+##              (C) COPYRIGHT 2012 Universitat Politècnica de Catalunya
+##                            ALL RIGHTS RESERVED
+##
+## The entire notice above must be reproduced on all authorized copies.
+###############################################################################
+
+
+###############################################################################
+##
+## Author:	      Matina Maria Trompouki  <mtrompou@ac.upc.edu>
+##
+###############################################################################
+*/
+
 #ifndef _VIOLAJONES_KERNEL_H_
 #define _VIOLAJONES_KERNEL_H_
 
@@ -83,20 +108,6 @@ fix_links_cascade_continuous_memory(CvHaarClassifierCascade* dev_cascade)
 	}
 }
 
-/*
-__global__ void
-initializeGoodPointsCuda(uint32_t *goodPoints,int real_height,int real_width)
-{
-	int col = blockDim.x * blockIdx.x + threadIdx.x;
-
-        for(int i=0; i<real_height; i++)
-        {
-		goodPoints[i*real_width+col] = 255;
-        }
-}
-//QUESTION: real_width instead of width!
-*/
-
 
 __global__ void
 imgCopyCuda(uint32_t *dev_imgIn, float *dev_imgOut, int height, int width)
@@ -124,11 +135,6 @@ initializeGoodPointsCuda(uint32_t *dev_goodPoints, int num_pixels)
 
 
 
-
-
-
-
-
 __global__ void
 subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uint32_t *dev_goodPoints, int nTileRows, int nTileCols, int rowStep, int colStep, int real_width, float *dev_imgInt_f, float *dev_imgSqInt_f, int tileHeight, int tileWidth, int real_height, float scaleFactor, float scale_correction_factor, int *dev_foundObj, int *dev_nb_obj_found)
 {
@@ -139,12 +145,6 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 	float sumClassif = 0.0;
 	float varFact = 0.0;	
 	float featVal = 0.0;
-
-
-//	float *imgInt_f = NULL;
-//	float *imgSqInt_f = NULL;
-
-//	CvHaarFeature *feature_scaled = NULL;
 
 	CvHaarFeature feature_scaled;
 
@@ -161,68 +161,68 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 	int icol = (counter % stride)*colStep;
 
 	if ((irow < nTileRows) && (icol < nTileCols))
-{
-
-	for (iStage = 0; iStage < nStages; iStage++)
 	{
-		nNodes = dev_cascade->stageClassifier[iStage].count;
 
-
-		if (dev_goodPoints[irow*real_width+icol])
+		for (iStage = 0; iStage < nStages; iStage++)
 		{
-			sumClassif = 0.0;
-			//Operation used for every Stage of the Classifier 
-			varFact=computeVariance((float *)dev_imgInt_f, (float *)dev_imgSqInt_f, irow, icol, tileHeight, tileWidth, real_height, real_width);
-
-			if (varFact < 10e-15)
+			nNodes = dev_cascade->stageClassifier[iStage].count;
+	
+	
+			if (dev_goodPoints[irow*real_width+icol])
 			{
-				// this should not occur (possible overflow BUG)
-				varFact = 1.0; 
-				dev_goodPoints[irow*real_width+icol] = 0; 
-				break;
-			}
-			else
-			{
-				// Get the standard deviation 
-				varFact = sqrt(varFact);
-			}
-			//pointCount = 0;
-			for (iNode = 0; iNode < nNodes; iNode++)
-			{
-				computeFeature((float *)dev_imgInt_f, (float *)dev_imgSqInt_f, dev_cascade->stageClassifier[iStage].classifier[iNode].haarFeature, &featVal, irow, icol, tileHeight, tileWidth, scaleFactor, scale_correction_factor, &feature_scaled, real_height, real_width);
-				// Get the thresholds for every Node of the stage 
-				thresh = dev_cascade->stageClassifier[iStage].classifier[iNode].threshold;
-				a = dev_cascade->stageClassifier[iStage].classifier[iNode].left;
-				b = dev_cascade->stageClassifier[iStage].classifier[iNode].right;
-				sumClassif += (featVal < (float)(thresh*varFact) ? a : b);
-			}
-			// Update goodPoints according to detection threshold 
-			if (sumClassif < dev_cascade->stageClassifier[iStage].threshold)
-			{
-				dev_goodPoints[irow*real_width+icol] = 0;
-			}	  
-			else
-			{	
-				if (iStage == nStages - 1)
+				sumClassif = 0.0;
+				//Operation used for every Stage of the Classifier 
+				varFact=computeVariance((float *)dev_imgInt_f, (float *)dev_imgSqInt_f, irow, icol, tileHeight, tileWidth, real_height, real_width);
+	
+				if (varFact < 10e-15)
 				{
-					//(*dev_foundObj)++;
-					atomicAdd(dev_foundObj, 1);
+					// this should not occur (possible overflow BUG)
+					varFact = 1.0; 
+					dev_goodPoints[irow*real_width+icol] = 0; 
+					break;
 				}
-			}	  
+				else
+				{
+					// Get the standard deviation 
+					varFact = sqrt(varFact);
+				}
+				
+				for (iNode = 0; iNode < nNodes; iNode++)
+				{
+					computeFeature((float *)dev_imgInt_f, (float *)dev_imgSqInt_f, dev_cascade->stageClassifier[iStage].classifier[iNode].haarFeature, &featVal, irow, icol, tileHeight, tileWidth, scaleFactor, scale_correction_factor, &feature_scaled, real_height, real_width);
+					
+					// Get the thresholds for every Node of the stage 
+					thresh = dev_cascade->stageClassifier[iStage].classifier[iNode].threshold;
+					a = dev_cascade->stageClassifier[iStage].classifier[iNode].left;
+					b = dev_cascade->stageClassifier[iStage].classifier[iNode].right;
+					sumClassif += (featVal < (float)(thresh*varFact) ? a : b);
+				}
+				
+				// Update goodPoints according to detection threshold 
+				if (sumClassif < dev_cascade->stageClassifier[iStage].threshold)
+				{
+					dev_goodPoints[irow*real_width+icol] = 0;
+				}	  
+				else
+				{	
+					if (iStage == nStages - 1)
+					{
+						atomicAdd(dev_foundObj, 1);
+					}
+				}	  
+			}
+	
 		}
 
 	}
 
-}
 
-
-__threadfence();
-
-if(irow==0 && icol==0)
-{
-	//if (*dev_foundObj)
+	__threadfence();
+	
+	if(irow==0 && icol==0)
+	{
 		*dev_nb_obj_found=0;
-}
+	}
 
 
 }
@@ -269,61 +269,47 @@ subwindow_examine_candidates(Lock lock, uint32_t *dev_goodPoints, int nTileRows,
 
 				//Reduce number of detections in a given range 
 
-for(int i=0; i<32; i++)
-{
-		if((threadIdx.x%32)==i)
-	{
-       					
-				lock.lock();
-
-int dev_nb_obj_found_tmp = (*dev_scale_index_found)*NB_MAX_DETECTION + ((*dev_nb_obj_found)?(*dev_nb_obj_found)-1:0);
-
-
-if(centerX > (dev_goodcenterX[dev_nb_obj_found_tmp]+threshold_X)
-||
-centerX < (dev_goodcenterX[dev_nb_obj_found_tmp]-threshold_X)
-||
-centerY > (dev_goodcenterY[dev_nb_obj_found_tmp]+threshold_Y)
-||
-centerY < (dev_goodcenterY[dev_nb_obj_found_tmp]-threshold_Y))
+				int dev_nb_obj_found_tmp = (*dev_scale_index_found)*NB_MAX_DETECTION + ((*dev_nb_obj_found)?(*dev_nb_obj_found)-1:0);
 				
+				
+				if(centerX > (dev_goodcenterX[dev_nb_obj_found_tmp]+threshold_X)
+				||
+				centerX < (dev_goodcenterX[dev_nb_obj_found_tmp]-threshold_X)
+				||
+				centerY > (dev_goodcenterY[dev_nb_obj_found_tmp]+threshold_Y)
+				||
+				centerY < (dev_goodcenterY[dev_nb_obj_found_tmp]-threshold_Y))
 				{
+
 					centerX_tmp=centerX;
 					centerY_tmp=centerY;
 					radius_tmp=radius;
 					// Get only the restricted Good Points and get back the size for each one 
 
-int dev_scale_index_found_tmp = ((*dev_scale_index_found)?(*dev_scale_index_found)-1:0)*NB_MAX_DETECTION + (*dev_nb_obj_found);
-
-       dev_goodcenterX[dev_scale_index_found_tmp]=centerX_tmp;
-       dev_goodcenterY[dev_scale_index_found_tmp]=centerY_tmp;
-       dev_goodRadius[dev_scale_index_found_tmp]=radius_tmp;
+					int nb_obj_found_tmp = atomicAdd(dev_nb_obj_found, 1);
+					int dev_scale_index_found_tmp = ((*dev_scale_index_found)?(*dev_scale_index_found)-1:0)*NB_MAX_DETECTION + (nb_obj_found_tmp);
 
 
-					//(*dev_nb_obj_found)++;
-					*dev_nb_obj_found=*dev_nb_obj_found + 1;
-					// store number of detections at each scale
-					dev_nb_obj_found2[(*dev_scale_index_found)?(*dev_scale_index_found)-1:0]=(*dev_nb_obj_found); 
-				
-					}
+				        dev_goodcenterX[dev_scale_index_found_tmp]=centerX_tmp;
+				        dev_goodcenterY[dev_scale_index_found_tmp]=centerY_tmp;
+					dev_goodRadius[dev_scale_index_found_tmp]=radius_tmp;
+
+
+					atomicMax(&(dev_nb_obj_found2[(*dev_scale_index_found)?(*dev_scale_index_found)-1:0]), nb_obj_found_tmp+1); 
 			
-				lock.unlock();
-		}
-}
-
+					}
 			}
 		}
+
 
 		__threadfence();
 
 		if(irow==0 && icol==0)
 			atomicAdd(dev_scale_index_found, 1);
-       	}
 
-
-
+  
+     	}
 }
-
 
 
 
@@ -361,7 +347,7 @@ kernel_two_alt(int *dev_scale_index_found, uint32_t *dev_nb_obj_found2, uint32_t
 
 
 __global__ void
-kernel_three(uint32_t *dev_position, int *dev_scale_index_found, int real_width, int real_height, int *dev_counter_raster)
+kernel_three(uint32_t *dev_position, int *dev_scale_index_found, int real_width, int real_height)
 {
 	int offset_X = 0;
 	int offset_Y = 0;
@@ -382,9 +368,6 @@ kernel_three(uint32_t *dev_position, int *dev_scale_index_found, int real_width,
 		{
 			if((float)offset_X >= abs((float)dev_position[i]-dev_position[i+j]) && (float)offset_Y >= abs((float)dev_position[i+1]-dev_position[i+j+1]))
 			{
-
-				atomicAdd(dev_counter_raster, 1);
-
 				dev_position[i+j] = 0;
 				dev_position[i+j+1] = 0;
 				dev_position[i+j+2] = 0;
@@ -399,7 +382,7 @@ __global__ void
 kernel_draw_detection(uint32_t *dev_position, int *dev_scale_index_found, int real_width, uint32_t *dev_result2, int width_height)
 {
 	int counter = blockDim.x * blockIdx.x + threadIdx.x;
-	int i = (counter % NB_MAX_POINTS) * 3;
+	int i = counter * 3;
 
 	// Draw detection
 	if(i < NB_MAX_POINTS)
@@ -433,8 +416,6 @@ kernel_highlight_detection(uint32_t *imgIn, int *dev_scale_index_found, int real
 }
 
 
-
-
 __global__ void
 kernel_finalNb(int *dev_finalNb, uint32_t *dev_position)
 {
@@ -449,7 +430,6 @@ kernel_finalNb(int *dev_finalNb, uint32_t *dev_position)
 		}
 	}
 }
-
 
 
 #endif

@@ -92,9 +92,9 @@ void load_image_check(uint32_t *img, char *imgName, int width, int height)
 	int error = 0;                       /* Check if errors */
 
 	/* Input file open */
-	TRACE_INFO(("\n-----------------------------------------------------\n"));
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
 	TRACE_INFO(("PGM image file input routine \n"));
-	TRACE_INFO(("-----------------------------------------------------\n"));
+	TRACE_INFO(("----------------------------------------------------------------------------------\n"));
 	
 	fp = fopen(imgName, "rb");
 	if (NULL == fp)
@@ -129,8 +129,8 @@ void load_image_check(uint32_t *img, char *imgName, int width, int height)
 			}
 		}
 		/* Display parameters */
-		TRACE_INFO(("\n   Image width = %d, Image height = %d\n", x_size1, y_size1));
-		TRACE_INFO(("     Maximum gray level = %d\n\n",max_gray));
+		TRACE_INFO(("\n     Image width = %d, Image height = %d\n", x_size1, y_size1));
+		TRACE_INFO(("     Maximum gray level = %d\n",max_gray));
 		if (x_size1 > MAX_IMAGESIZE || y_size1 > MAX_IMAGESIZE)
 		{
 			TRACE_INFO(("     Image size exceeds %d x %d\n\n", MAX_IMAGESIZE, MAX_IMAGESIZE));
@@ -193,8 +193,8 @@ void load_image_check(uint32_t *img, char *imgName, int width, int height)
 			}
 		}
 		/* Display parameters */
-		TRACE_INFO(("\n   Image width = %d, Image height = %d\n", x_size1, y_size1));
-		TRACE_INFO(("     Maximum gray level = %d\n\n", max_gray));
+		TRACE_INFO(("\n     Image width = %d, Image height = %d\n", x_size1, y_size1));
+		TRACE_INFO(("     Maximum gray level = %d\n", max_gray));
 		if (x_size1 > MAX_IMAGESIZE || y_size1 > MAX_IMAGESIZE)
 		{
 			TRACE_INFO(("     Image size exceeds %d x %d\n\n", MAX_IMAGESIZE, MAX_IMAGESIZE));
@@ -1260,13 +1260,12 @@ int main( int argc, char** argv )
 	uint32_t *imgSqInt = NULL;
 	uint32_t *result2 = NULL;
 
-	uint32_t *cuda_imgInt = NULL;
-	uint32_t *cuda_imgInt2 = NULL;
-	uint32_t *cuda_imgInt3 = NULL;
-
 	float *cuda_imgInt_f = NULL;
 	float *cuda_imgSqInt_f = NULL;
 	
+	uint32_t *cuda_imgInt = NULL;
+        uint32_t *cuda_imgInt2 = NULL;
+        uint32_t *cuda_imgInt3 = NULL;
 
 	uint32_t *dev_img = NULL;
 	uint32_t *dev_imgInt = NULL;
@@ -1324,7 +1323,6 @@ int main( int argc, char** argv )
 	uint32_t *goodRadius=NULL;
 	uint32_t *nb_obj_found2=NULL;
 
-	//uint32_t *position= NULL;
 	uint32_t *goodPoints = NULL;
 
 	// Counter Declaration 
@@ -1347,7 +1345,6 @@ int main( int argc, char** argv )
 	int scale_index_found=0;
 
 	int *dev_count = 0;
-	//int count = 0;
 
 	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_count, (sizeof (int))));
         ERROR_CHECK
@@ -1359,31 +1356,6 @@ int main( int argc, char** argv )
 
 	CUDA_SAFE_CALL(cudaMemset(dev_count, 0, sizeof(int)));
         ERROR_CHECK
-
-
-
-
-//////////////////////////////////////////////////////////////////
-
-
-	//Counter for raster_detection
-	int *dev_counter_raster = 0;
-	int raster_counter;
-
-	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_counter_raster, (sizeof (int))));
-        ERROR_CHECK
-
-        if (dev_counter_raster == NULL) {
-               TRACE_INFO(("CUDA_ALLOC_DEV_COUNT: Couldn't allocate dev_counter_raster in GPU\n"));
-               exit(-1);
-        }
-
-	CUDA_SAFE_CALL(cudaMemset(dev_counter_raster, 0, sizeof(int)));
-	ERROR_CHECK
-
-
-////////////////////////////////////////////////////////////
-
 
 
 	//int offset_X = 0, offset_Y = 0;
@@ -1401,7 +1373,7 @@ int main( int argc, char** argv )
 	float *imgSqInt_f = NULL;
 
 	//Declare timer
-	unsigned int timer_compute=0;
+	//unsigned int timer_compute=0;
 
 	int block_size = 16;
 
@@ -1415,7 +1387,7 @@ int main( int argc, char** argv )
 	imgName=argv[1];
 	haarFileName=argv[2];
 
-	TRACE_INFO(("\n-------------------------------------------- \nSmart Camera application running.... \n-------------------------------------------- \n"));
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\nSmart Camera application running.... \n----------------------------------------------------------------------------------\n"));
 
 	// Start the clock counter 
 	start = clock();
@@ -1428,11 +1400,6 @@ int main( int argc, char** argv )
 	real_width=width;
 
 	// Allocate the Cascade Memory 
-
-
-/*	cascade = allocCascade();
-	cascade_scaled = allocCascade();
-*/	
 	cascade = allocCascade_continuous();
 	cascade_scaled = allocCascade_continuous(); 
 	feature_scaled = (CvHaarFeature *)malloc(sizeof(CvHaarFeature));
@@ -1445,23 +1412,15 @@ int main( int argc, char** argv )
 
 	copyCascadeFromHostToDevice(dev_cascade, cascade);
 
-        CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
-        CUT_SAFE_CALL(cutStartTimer(timer_compute));
-
 	fix_links_cascade_continuous_memory<<<1,1>>>(dev_cascade);      
 	ERROR_CHECK
 
-        CUT_SAFE_CALL(cutStopTimer(timer_compute));
-
-        printf("Time after fixing the links of continuous memory cascade in GPGPU: %f (ms)\n",cutGetTimerValue(timer_compute));
-
-	TRACE_INFO(("\n-----------------------------------------------------\n"));
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
 	TRACE_INFO(("Classifier file input routine \n"));
-	TRACE_INFO(("-----------------------------------------------------\n\n"));
+	TRACE_INFO(("----------------------------------------------------------------------------------\n\n"));
 	TRACE_INFO(("     Number of Stages = %d\n", nStages));
 	TRACE_INFO(("     Original Feature Height = %d\n", detSizeR));
 	TRACE_INFO(("     Original Feature Width = %d\n", detSizeC));
-
 	// Determine the Max Scale Factor
 	if (detSizeR != 0 && detSizeC != 0)
 	{
@@ -1473,15 +1432,9 @@ int main( int argc, char** argv )
 	imgInt=alloc_1d_uint32_t(width*height);
 	imgSq=alloc_1d_uint32_t(width*height);
 	imgSqInt=alloc_1d_uint32_t(width*height);
-	//result2=alloc_2d_uint32_t(nStages, width*height);
 	result2 = alloc_1d_uint32_t(nStages*width*height);
-	//position=alloc_1d_uint32_t(width*height);
 
 	//images returned from GPU
-	cuda_imgInt=alloc_1d_uint32_t(width*height);
-	cuda_imgInt2=alloc_1d_uint32_t(width*height);
-	cuda_imgInt3=alloc_1d_uint32_t(width*height);
-	
 	cuda_imgInt_f = alloc_1d_float(width*height);
 	cuda_imgSqInt_f = alloc_1d_float(width*height); 
 
@@ -1517,7 +1470,11 @@ int main( int argc, char** argv )
 
 	CUDA_SAFE_CALL(cudaMemset(dev_result2, 0, (sizeof(uint32_t)*nStages*width*height)));
 	ERROR_CHECK
-	
+
+	//images returned from GPU
+        cuda_imgInt=alloc_1d_uint32_t(width*height);
+        cuda_imgInt2=alloc_1d_uint32_t(width*height);
+        cuda_imgInt3=alloc_1d_uint32_t(width*height);	
 
 	nb_obj_found2=alloc_1d_uint32_t(nStages);
 
@@ -1548,13 +1505,6 @@ int main( int argc, char** argv )
 	assert(width % block_size==0);
 	dim3 grid_column(width/block_size);
 
-/*
-	printf("Parameters for the kernels:\n");	
-        printf("  # of threads in a block: %d\n", block.x);
-        printf("  # of blocks in a grid (rows) : %d\n", grid_row.x);
-	printf("  # of blocks in a grid (cols) : %d\n", grid_column.x);
-*/
-
 	computeIntegralImgRowCuda<<<block,grid_row>>>((uint32_t *)dev_img, (uint32_t *)dev_imgInt, width);
 	ERROR_CHECK
 
@@ -1566,14 +1516,12 @@ int main( int argc, char** argv )
         computeSquareImageCuda_rows<<<block, grid_row>>>((uint32_t *)dev_img, (uint32_t *)dev_imgSq, width);
         ERROR_CHECK
 
-	//End of computation with ROWS----------------------------------
 */	
 	//Square image computation with COLUMNS-------------------------
 
 	computeSquareImageCuda_cols<<<block, grid_column>>>((uint32_t *)dev_img, (uint32_t *)dev_imgSq, height, width);
         ERROR_CHECK
 
-	//End of computation with COLUMNS-------------------------------
 
         computeIntegralImgRowCuda<<<block,grid_row>>>((uint32_t *)dev_imgSq, (uint32_t *)dev_imgSqInt, width);
         ERROR_CHECK
@@ -1582,8 +1530,21 @@ int main( int argc, char** argv )
         ERROR_CHECK
 
 
+//Transfer integral image, dotsquare image and dotsquare integral image back to host
+
+	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt, dev_imgInt, sizeof(uint32_t)*(width*height), cudaMemcpyDeviceToHost));
+	ERROR_CHECK
+        
+	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt2, dev_imgSq, sizeof(uint32_t)*(width*height), cudaMemcpyDeviceToHost));
+	ERROR_CHECK
+        
+	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt3, dev_imgSqInt, sizeof(uint32_t)*(width*height), cudaMemcpyDeviceToHost));
+	ERROR_CHECK
+
+
+
 /*-------------------------------------------------------------------------------------------------------*/
-/*	CLASSIFICATION PHASE		*/	
+/*					   CLASSIFICATION PHASE						 */
 /*-------------------------------------------------------------------------------------------------------*/
 
 
@@ -1597,18 +1558,22 @@ int main( int argc, char** argv )
 	imgCopyCuda<<<(width*height)/128, 128>>>((uint32_t *)dev_imgSqInt, (float *)dev_imgSqInt_f, height, width);	
         ERROR_CHECK
 
-	
-	TRACE_INFO(("\n-----------------------------------------------------\n"));
-	TRACE_INFO(("Processing scales routine \n"));
-	TRACE_INFO(("-----------------------------------------------------\n\n"));
 
-int scale_num = 0;
+	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt_f, dev_imgInt_f, sizeof(float)*(width*height), cudaMemcpyDeviceToHost));
+	ERROR_CHECK
+
+        CUDA_SAFE_CALL(cudaMemcpy(cuda_imgSqInt_f, dev_imgSqInt_f, sizeof(float)*(width*height), cudaMemcpyDeviceToHost));
+        ERROR_CHECK
+
+	
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
+	TRACE_INFO(("Processing scales routine \n"));
+	TRACE_INFO(("----------------------------------------------------------------------------------\n\n"));
+
 
 	// Launch the Main Loop 
 	for (scaleFactor = 1; scaleFactor <= scaleFactorMax; scaleFactor *= scaleStep)
 	{
-		scale_num++;
-
 		int num_pixels = real_width*real_height;
 		
 		//Initializing the goodPoints
@@ -1621,7 +1586,8 @@ int scale_num = 0;
 		rowStep = max(2, (int)floor(scaleFactor + 0.5));
 		colStep = max(2, (int)floor(scaleFactor + 0.5));
 
-    //(TP) according to openCV: added correction by reducing scaled detector window by 2 pixels in each direction
+    		//(TP) according to openCV: added correction by reducing scaled detector window by 2 pixels in each direction
+		
 		scale_correction_factor = (float)1.0/(float)((int)floor((detSizeC-2)*scaleFactor)*(int)floor((detSizeR-2)*scaleFactor)); 
 
 		// compute number of tiles: difference between the size of the Image and the size of the Detector 
@@ -1630,59 +1596,39 @@ int scale_num = 0;
 
 		foundObj = 0;
 		
-
-CUDA_SAFE_CALL(cudaMemcpy(dev_foundObj, &foundObj, sizeof(int), cudaMemcpyHostToDevice));
-ERROR_CHECK
-
-int irowiterations = 0;
-int icoliterations = 0;
-int number_of_threads = 0;
-
-irowiterations = (int)ceilf((float)nTileRows/rowStep);
-icoliterations = (int)ceilf((float)nTileCols/colStep);
-
-number_of_threads = irowiterations*icoliterations;
-
-subwindow_find_candidates<<<(number_of_threads+127)/128,128>>>( nStages, dev_cascade, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, dev_imgInt_f, dev_imgSqInt_f, tileHeight, tileWidth, real_height, scaleFactor, scale_correction_factor, dev_foundObj, dev_nb_obj_found);
-
-ERROR_CHECK
-/*
-for(int i=0; i<width*height; i++)
-{
-	CUDA_SAFE_CALL(cudaMemcpy(&raster_counter, dev_goodPoints+i, sizeof(uint32_t), cudaMemcpyDeviceToHost));
-	ERROR_CHECK
-	printf("dev_goodPoints[%d]=%d\n",i,raster_counter);
-}
-//Checked and is the same
-*/
-
-subwindow_examine_candidates<<<(number_of_threads+127)/128,128>>>(lock, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, tileHeight, tileWidth, scaleFactor, dev_foundObj, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_scale_index_found, dev_nb_obj_found, dev_nb_obj_found2);
-
-ERROR_CHECK
-
-CUDA_SAFE_CALL(cudaMemcpy(&raster_counter, dev_nb_obj_found, sizeof(int), cudaMemcpyDeviceToHost));
-ERROR_CHECK
-//printf("nb_obj_found=%d\n",raster_counter);
-for(int i=0; i<nStages; i++)
-{
-	for(int j=0; j<NB_MAX_DETECTION; j++)
-	{
-		CUDA_SAFE_CALL(cudaMemcpy(&raster_counter, dev_goodcenterX+i*NB_MAX_DETECTION+j, sizeof(uint32_t), cudaMemcpyDeviceToHost));
+		CUDA_SAFE_CALL(cudaMemcpy(dev_foundObj, &foundObj, sizeof(int), cudaMemcpyHostToDevice));
 		ERROR_CHECK
-		printf("dev_goodCenterX[%d][%d]=%d\n",i,j,raster_counter);
-	}
-}
-exit(-1);
 
-CUDA_SAFE_CALL(cudaMemcpy(&nb_obj_found, dev_nb_obj_found, sizeof(int), cudaMemcpyDeviceToHost));
-ERROR_CHECK
+		int irowiterations = 0;
+		int icoliterations = 0;
+		int number_of_threads = 0;
 
+		irowiterations = (int)ceilf((float)nTileRows/rowStep);
+		icoliterations = (int)ceilf((float)nTileCols/colStep);
+
+		number_of_threads = irowiterations*icoliterations;
+
+
+
+		subwindow_find_candidates<<<(number_of_threads+127)/128,128>>>( nStages, dev_cascade, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, dev_imgInt_f, dev_imgSqInt_f, tileHeight, tileWidth, real_height, scaleFactor, scale_correction_factor, dev_foundObj, dev_nb_obj_found);
+
+		ERROR_CHECK
+
+
+		subwindow_examine_candidates<<<(number_of_threads+127)/128,128>>>(lock, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, tileHeight, tileWidth, scaleFactor, dev_foundObj, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_scale_index_found, dev_nb_obj_found, dev_nb_obj_found2);
+
+		ERROR_CHECK
+
+
+		CUDA_SAFE_CALL(cudaMemcpy(&nb_obj_found, dev_nb_obj_found, sizeof(int), cudaMemcpyDeviceToHost));
+		ERROR_CHECK
+
+		CUDA_SAFE_CALL(cudaMemcpy(&scale_index_found, dev_scale_index_found, sizeof(int), cudaMemcpyDeviceToHost));
+		ERROR_CHECK
 
 	}	
 	// Done processing all scales 
-	
-CUDA_SAFE_CALL(cudaMemcpy(&scale_index_found, dev_scale_index_found, sizeof(int), cudaMemcpyDeviceToHost));
-ERROR_CHECK
+
 
 	// Timer end 
 	end = clock();
@@ -1690,96 +1636,70 @@ ERROR_CHECK
 	// Timer calculation (for detection time) and convert in ms 
 	detectionTime = (float)(end-start)/CLOCKS_PER_SEC * 1000;
 
-	TRACE_INFO(("\nFinished processing tiles up to (%d/%d,%d/%d) position. Detection time = %f ms.\n",
+	TRACE_INFO(("     Finished processing tiles up to (%d/%d,%d/%d) position. Detection time = %f ms.\n",
 				nTileRows-1, height, nTileCols-1, width, detectionTime));
 
 
 	if (scale_index_found)
-		TRACE_INFO(("\n---------------------------------------------\nHandling multiple detections\nscale index found:%d---------------------------------------------\n", scale_index_found));
-
-/*KERNEL ONE*/
-
-kernel_one<<<1,scale_index_found>>>(dev_scale_index_found, dev_nb_obj_found2);
-ERROR_CHECK
+		TRACE_INFO(("\n----------------------------------------------------------------------------------\nHandling multiple detections\n----------------------------------------------------------------------------------\n"));
 
 
-/*for(int i=0; i<=scale_index_found; i++)
-{
-	CUDA_SAFE_CALL(cudaMemcpy(&raster_counter, dev_nb_obj_found2+i, sizeof(int), cudaMemcpyDeviceToHost));
+	kernel_one<<<1,scale_index_found>>>(dev_scale_index_found, dev_nb_obj_found2);
 	ERROR_CHECK
-	printf("nb_obj_found2[%d]=%d\n",i,raster_counter);
-}
-exit(-1);
-*/
-/*KERNEL TWO*/
-
-kernel_two_alt<<<1,1>>>(dev_scale_index_found, dev_nb_obj_found2, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_position, dev_count);
-ERROR_CHECK
-
-/*KERNEL THREE*/
-
-int irowiterations = 0;
-int icoliterations = 0;
-int number_of_threads = 0;
-
-irowiterations = (int)ceilf((float)NB_MAX_POINTS/3);
-icoliterations = (int)ceilf((float)NB_MAX_POINTS/3);
-
-number_of_threads = irowiterations*icoliterations;
-
-kernel_three<<<(number_of_threads+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, real_height, dev_counter_raster);
-ERROR_CHECK
-
-/*CUDA_SAFE_CALL(cudaMemcpy(&raster_counter, dev_counter_raster, sizeof(int), cudaMemcpyDeviceToHost));
-ERROR_CHECK
-printf("\nraster_counter = %d\n", raster_counter);*/
-
-/*KERNEL DRAW DETECTION*/
-
-kernel_draw_detection<<<(irowiterations+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, dev_result2, width*height);
-ERROR_CHECK
-
-/*
-kernel_draw_detection<<<(irowiterations+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, dev_result2, width*height, dev_counter_raster);
-ERROR_CHECK
-*/
-
-
-/*KERNEL HIGHLIGHT*/
-
-number_of_threads = real_width * real_height;
-
-kernel_highlight_detection<<<(number_of_threads+127)/128,128>>>(dev_img, dev_scale_index_found, real_width, real_height, dev_result2, width*height);
-ERROR_CHECK
-
-CUDA_SAFE_CALL(cudaMemcpy(result2, dev_result2, sizeof(uint32_t)*nStages*width*height, cudaMemcpyDeviceToHost));
-ERROR_CHECK
-
-/*KERNEL FINALNB*/
-
-int finalNb = 0;
 	
-int *dev_finalNb = NULL;
+	
+	kernel_two_alt<<<1,1>>>(dev_scale_index_found, dev_nb_obj_found2, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_position, dev_count);
+	ERROR_CHECK
+	
+	
+	int irowiterations = 0;
+	int icoliterations = 0;
+	int number_of_threads = 0;
+	
+	irowiterations = (int)ceilf((float)NB_MAX_POINTS/3);
+	icoliterations = (int)ceilf((float)NB_MAX_POINTS/3);
+	
+	number_of_threads = irowiterations*icoliterations;
+	
+	kernel_three<<<(number_of_threads+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, real_height);
+	ERROR_CHECK
+	
+	kernel_draw_detection<<<(irowiterations+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, dev_result2, width*height);
+	ERROR_CHECK
+	
+	
+	number_of_threads = real_width * real_height;
+	
+	kernel_highlight_detection<<<(number_of_threads+127)/128,128>>>(dev_img, dev_scale_index_found, real_width, real_height, dev_result2, width*height);
+	ERROR_CHECK
+	
+	CUDA_SAFE_CALL(cudaMemcpy(result2, dev_result2, sizeof(uint32_t)*nStages*width*height, cudaMemcpyDeviceToHost));
+	ERROR_CHECK
 
-CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_finalNb, (sizeof (int))));
-ERROR_CHECK
+	
+	int finalNb = 0;
+		
+	int *dev_finalNb = NULL;
+	
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_finalNb, (sizeof (int))));
+	ERROR_CHECK
+	
+	if (dev_finalNb == NULL) {
+	       TRACE_INFO(("CUDA_ALLOC_FINALNB: Couldn't allocate finalNb in GPU\n"));
+	       exit(-1);
+	}
+	
+	CUDA_SAFE_CALL(cudaMemset(dev_finalNb, 0, sizeof(int)));
+	ERROR_CHECK
+	
+	kernel_finalNb<<<(irowiterations+127)/128,128>>>(dev_finalNb, dev_position);
+	ERROR_CHECK
+	
+	CUDA_SAFE_CALL(cudaMemcpy(&finalNb, dev_finalNb, sizeof(int), cudaMemcpyDeviceToHost));
+	ERROR_CHECK
 
-if (dev_finalNb == NULL) {
-       TRACE_INFO(("CUDA_ALLOC_FINALNB: Couldn't allocate finalNb in GPU\n"));
-       exit(-1);
-}
 
-CUDA_SAFE_CALL(cudaMemset(dev_finalNb, 0, sizeof(int)));
-ERROR_CHECK
-
-kernel_finalNb<<<(irowiterations+127)/128,128>>>(dev_finalNb, dev_position);
-ERROR_CHECK
-
-CUDA_SAFE_CALL(cudaMemcpy(&finalNb, dev_finalNb, sizeof(int), cudaMemcpyDeviceToHost));
-ERROR_CHECK
-
-
-	sprintf(result_name, "result_%d.pgm", finalNb);
+	sprintf(result_name, "gpu_result_%s", imgName);
 
 	// Write the final result of the detection application 
 	imgWrite((uint32_t *)&(result2[scale_index_found*width*height]), result_name, height, width);
@@ -1790,8 +1710,6 @@ ERROR_CHECK
 	releaseCascade_continuous(cascade);	
 	releaseCascade_continuous(cascade_scaled);
 	
-	//releaseCascade(cascade);
-	//releaseCascade(cascade_scaled);
 	free(feature_scaled);
 	free(img);
 	free(imgInt);
@@ -1812,7 +1730,8 @@ ERROR_CHECK
 	free(cuda_imgSqInt_f);
 
 
-	TRACE_INFO(("\n FOUND %d OBJECTS \n",finalNb));
-	TRACE_INFO(("\n---------------------------------------------------------- \nSmart Camera application ended OK! Check %s file! \n---------------------------------------------------------- \n",result_name));
+	TRACE_INFO(("\n     FOUND %d OBJECTS \n",finalNb));
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\nSmart Camera application ended OK! Check %s file!\n----------------------------------------------------------------------------------\n", result_name));
+	
 	return 0;
 }
