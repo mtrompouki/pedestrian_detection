@@ -34,4 +34,4 @@ clean:
 	rm -rf violajones *.o
 
 run: all
-	./violajones person_015.pgm classifier.txt
+	./violajones classifier.txt person_015.pgm 

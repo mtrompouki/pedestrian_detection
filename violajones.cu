@@ -1303,8 +1303,6 @@ int main( int argc, char** argv )
                exit(-1);
         }
 	
-	CUDA_SAFE_CALL(cudaMemset(dev_scale_index_found, 0, sizeof(int)));
-	ERROR_CHECK
 
 	int *dev_nb_obj_found = NULL;
 	
@@ -1354,8 +1352,6 @@ int main( int argc, char** argv )
                exit(-1);
         }
 
-	CUDA_SAFE_CALL(cudaMemset(dev_count, 0, sizeof(int)));
-        ERROR_CHECK
 
 
 	//int offset_X = 0, offset_Y = 0;
@@ -1377,21 +1373,22 @@ int main( int argc, char** argv )
 
 	int block_size = 16;
 
-	if (argc <= 2 || argc > 3)
+	if (argc <= 2)
 	{
-		TRACE_INFO(("Usage: %s image classifier\n", argv[0]));
+		TRACE_INFO(("Usage: %s classifier image1 image2 ...\n", argv[0]));
 		return(0);
 	}
 
 	// Get the Image name and the Cascade file name from the console 
-	imgName=argv[1];
-	haarFileName=argv[2];
+	haarFileName=argv[1];
 
 	TRACE_INFO(("\n----------------------------------------------------------------------------------\nSmart Camera application running.... \n----------------------------------------------------------------------------------\n"));
 
 	// Start the clock counter 
 	start = clock();
 
+	//All the images _MUST_ have the same dimensions
+	imgName=argv[2];
 	// Get the Input Image informations 
 	getImgDims(imgName, &width, &height);
 
@@ -1453,6 +1450,40 @@ int main( int argc, char** argv )
 	dev_position = cuda_alloc_1d_uint32_t(width*height);
 	dev_result2 = cuda_alloc_1d_uint32_t(nStages*width*height);
 
+
+	//images returned from GPU
+        cuda_imgInt=alloc_1d_uint32_t(width*height);
+        cuda_imgInt2=alloc_1d_uint32_t(width*height);
+        cuda_imgInt3=alloc_1d_uint32_t(width*height);	
+
+	nb_obj_found2=alloc_1d_uint32_t(nStages);
+
+	goodcenterX=alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
+	goodcenterY=alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
+	goodRadius=alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
+
+	goodPoints=alloc_1d_uint32_t(width*height);
+	imgInt_f=alloc_1d_float(width*height);
+	imgSqInt_f=alloc_1d_float(width*height);
+
+	//Loop for all the images
+	//--------------------------------------------------------------------------------
+	
+	for(int image_counter=0; image_counter < argc-2; image_counter++)
+	{	
+	
+	imgName=argv[image_counter+2];
+	
+	printf("Number of arg: %d %s\n",image_counter+2, imgName);
+	
+	//Memsets
+
+	CUDA_SAFE_CALL(cudaMemset(dev_scale_index_found, 0, sizeof(int)));
+	ERROR_CHECK
+
+	CUDA_SAFE_CALL(cudaMemset(dev_count, 0, sizeof(int)));
+        ERROR_CHECK
+
 	CUDA_SAFE_CALL(cudaMemset(dev_goodcenterX, 0, (sizeof(uint32_t)*nStages*NB_MAX_DETECTION)));
 	ERROR_CHECK
 
@@ -1470,21 +1501,6 @@ int main( int argc, char** argv )
 
 	CUDA_SAFE_CALL(cudaMemset(dev_result2, 0, (sizeof(uint32_t)*nStages*width*height)));
 	ERROR_CHECK
-
-	//images returned from GPU
-        cuda_imgInt=alloc_1d_uint32_t(width*height);
-        cuda_imgInt2=alloc_1d_uint32_t(width*height);
-        cuda_imgInt3=alloc_1d_uint32_t(width*height);	
-
-	nb_obj_found2=alloc_1d_uint32_t(nStages);
-
-	goodcenterX=alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
-	goodcenterY=alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
-	goodRadius=alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
-
-	goodPoints=alloc_1d_uint32_t(width*height);
-	imgInt_f=alloc_1d_float(width*height);
-	imgSqInt_f=alloc_1d_float(width*height);
 
 	// load the Image in Memory 
 	load_image_check((uint32_t *)img, (char *)imgName, width, height);
@@ -1704,7 +1720,11 @@ int main( int argc, char** argv )
 	// Write the final result of the detection application 
 	imgWrite((uint32_t *)&(result2[scale_index_found*width*height]), result_name, height, width);
 	
+	TRACE_INFO(("\n     FOUND %d OBJECTS \n",finalNb));
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\nSmart Camera application ended OK! Check %s file!\n----------------------------------------------------------------------------------\n", result_name));
 	
+	} //for of all images
+
 	// FREE ALL the allocations
  
 	releaseCascade_continuous(cascade);	
@@ -1730,8 +1750,7 @@ int main( int argc, char** argv )
 	free(cuda_imgSqInt_f);
 
 
-	TRACE_INFO(("\n     FOUND %d OBJECTS \n",finalNb));
-	TRACE_INFO(("\n----------------------------------------------------------------------------------\nSmart Camera application ended OK! Check %s file!\n----------------------------------------------------------------------------------\n", result_name));
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\n%d images processed!\n----------------------------------------------------------------------------------\n",argc-2));
 	
 	return 0;
 }
