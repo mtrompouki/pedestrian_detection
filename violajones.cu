@@ -1241,6 +1241,12 @@ int main( int argc, char** argv )
 	// Timer declaration 
 	//time_t start, end;
 
+	//Declare timer
+        unsigned int timer_compute=0;
+
+	CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
+        CUT_SAFE_CALL(cutStartTimer(timer_compute));
+
 	// Pointer declaration
 	CvHaarClassifierCascade* cascade = NULL;
 	CvHaarClassifierCascade* cascade_scaled = NULL;
@@ -1280,13 +1286,6 @@ int main( int argc, char** argv )
 	uint32_t *dev_nb_obj_found2 = NULL;
 	uint32_t *dev_position = NULL;
 	uint32_t *dev_result2 = NULL;
-
-
-unsigned int timer_compute=0;
-unsigned int timer_compute2=0;
-float timer_all_scales = 0;
-float timer_integral = 0;
-float timer_class = 0;
 
 	Lock lock;
 
@@ -1414,17 +1413,10 @@ float timer_class = 0;
 	// Get the Classifier informations 
 	readClassifCascade(haarFileName, cascade, &detSizeR, &detSizeC, &nStages);
 
-CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
-CUT_SAFE_CALL(cutStartTimer(timer_compute));
-
 	copyCascadeFromHostToDevice(dev_cascade, cascade);
 
 	fix_links_cascade_continuous_memory<<<1,1>>>(dev_cascade);      
 	ERROR_CHECK
-
-CUT_SAFE_CALL(cutStopTimer(timer_compute));
-printf("Time cascade from host to device: %f (ms)\n", cutGetTimerValue(timer_compute));
-timer_all_scales += cutGetTimerValue(timer_compute);
 
 //	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
 //	TRACE_INFO(("Classifier file input routine \n"));
@@ -1480,6 +1472,13 @@ timer_all_scales += cutGetTimerValue(timer_compute);
 	imgInt_f=alloc_1d_float(width*height);
 	imgSqInt_f=alloc_1d_float(width*height);
 
+
+	CUT_SAFE_CALL(cutStopTimer(timer_compute));
+        printf("Total time before images loop: %f (ms)\n",cutGetTimerValue(timer_compute));
+
+	CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
+        CUT_SAFE_CALL(cutStartTimer(timer_compute));
+
 	//Loop for all the images
 	//--------------------------------------------------------------------------------
 	
@@ -1491,9 +1490,6 @@ timer_all_scales += cutGetTimerValue(timer_compute);
 //	printf("Number of arg: %d %s\n",image_counter+2, imgName);
 	
 	//Memsets
-
-CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
-CUT_SAFE_CALL(cutStartTimer(timer_compute));
 
 	CUDA_SAFE_CALL(cudaMemset(dev_scale_index_found, 0, sizeof(int)));
 	ERROR_CHECK
@@ -1519,21 +1515,12 @@ CUT_SAFE_CALL(cutStartTimer(timer_compute));
 	CUDA_SAFE_CALL(cudaMemset(dev_result2, 0, (sizeof(uint32_t)*nStages*width*height)));
 	ERROR_CHECK
 
-CUT_SAFE_CALL(cutStopTimer(timer_compute));
-//printf("Time memsets: %f (ms)\n", cutGetTimerValue(timer_compute));
-
 	// load the Image in Memory 
 	load_image_check((uint32_t *)img, (char *)imgName, width, height);
-
-CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
-CUT_SAFE_CALL(cutStartTimer(timer_compute));	
+	
 
 	CUDA_SAFE_CALL(cudaMemcpy(dev_img, img, sizeof(uint32_t)*(width*height), cudaMemcpyHostToDevice));
 	ERROR_CHECK
-
-CUT_SAFE_CALL(cutStopTimer(timer_compute));
-//printf("Time img to device: %f (ms)\n", cutGetTimerValue(timer_compute));
-timer_all_scales += cutGetTimerValue(timer_compute);
 
         dim3 block(block_size); 
 
@@ -1547,15 +1534,11 @@ timer_all_scales += cutGetTimerValue(timer_compute);
 	assert(width % block_size==0);
 	dim3 grid_column(width/block_size);
 
-CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
-CUT_SAFE_CALL(cutStartTimer(timer_compute));
-
 	computeIntegralImgRowCuda<<<block,grid_row>>>((uint32_t *)dev_img, (uint32_t *)dev_imgInt, width);
 	ERROR_CHECK
 
 	computeIntegralImgColCuda<<<block,grid_column>>>((uint32_t *)dev_imgInt, width, height);      
 	ERROR_CHECK
-
 /*
 	//Square image computation with ROWS----------------------------
 
@@ -1575,13 +1558,8 @@ CUT_SAFE_CALL(cutStartTimer(timer_compute));
         computeIntegralImgColCuda<<<block,grid_column>>>((uint32_t *)dev_imgSqInt, width, height);
         ERROR_CHECK
 
-CUT_SAFE_CALL(cutStopTimer(timer_compute));
-//printf("Time: %f (ms)\n", cutGetTimerValue(timer_compute));
-//Transfer integral image, dotsquare image and dotsquare integral image back to host
-timer_integral += cutGetTimerValue(timer_compute);
 
-CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
-CUT_SAFE_CALL(cutStartTimer(timer_compute));
+//Transfer integral image, dotsquare image and dotsquare integral image back to host
 
 	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt, dev_imgInt, sizeof(uint32_t)*(width*height), cudaMemcpyDeviceToHost));
 	ERROR_CHECK
@@ -1593,9 +1571,7 @@ CUT_SAFE_CALL(cutStartTimer(timer_compute));
 	ERROR_CHECK
 
 
-CUT_SAFE_CALL(cutStopTimer(timer_compute));
-//printf("Time of trensfer integral image to device: %f (ms)\n", cutGetTimerValue(timer_compute));
-timer_all_scales += cutGetTimerValue(timer_compute);
+
 /*-------------------------------------------------------------------------------------------------------*/
 /*					   CLASSIFICATION PHASE						 */
 /*-------------------------------------------------------------------------------------------------------*/
@@ -1611,8 +1587,6 @@ timer_all_scales += cutGetTimerValue(timer_compute);
 	imgCopyCuda<<<(width*height)/128, 128>>>((uint32_t *)dev_imgSqInt, (float *)dev_imgSqInt_f, height, width);	
         ERROR_CHECK
 
-CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
-CUT_SAFE_CALL(cutStartTimer(timer_compute));
 
 	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt_f, dev_imgInt_f, sizeof(float)*(width*height), cudaMemcpyDeviceToHost));
 	ERROR_CHECK
@@ -1620,17 +1594,10 @@ CUT_SAFE_CALL(cutStartTimer(timer_compute));
         CUDA_SAFE_CALL(cudaMemcpy(cuda_imgSqInt_f, dev_imgSqInt_f, sizeof(float)*(width*height), cudaMemcpyDeviceToHost));
         ERROR_CHECK
 
-CUT_SAFE_CALL(cutStopTimer(timer_compute));
-//printf("Time float images device to host: %f (ms)\n", cutGetTimerValue(timer_compute));
-timer_all_scales += cutGetTimerValue(timer_compute);	
-
+	
 //	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
 //	TRACE_INFO(("Processing scales routine \n"));
 //	TRACE_INFO(("----------------------------------------------------------------------------------\n\n"));
-
-CUT_SAFE_CALL(cutCreateTimer(&timer_compute2));
-CUT_SAFE_CALL(cutStartTimer(timer_compute2));
-
 
 
 	// Launch the Main Loop 
@@ -1681,16 +1648,13 @@ CUT_SAFE_CALL(cutStartTimer(timer_compute2));
 
 		ERROR_CHECK
 
-CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
-CUT_SAFE_CALL(cutStartTimer(timer_compute));
+
 		CUDA_SAFE_CALL(cudaMemcpy(&nb_obj_found, dev_nb_obj_found, sizeof(int), cudaMemcpyDeviceToHost));
 		ERROR_CHECK
 
 		CUDA_SAFE_CALL(cudaMemcpy(&scale_index_found, dev_scale_index_found, sizeof(int), cudaMemcpyDeviceToHost));
 		ERROR_CHECK
 
-CUT_SAFE_CALL(cutStopTimer(timer_compute));
-timer_all_scales += cutGetTimerValue(timer_compute);
 	}	
 	// Done processing all scales 
 
@@ -1727,14 +1691,7 @@ timer_all_scales += cutGetTimerValue(timer_compute);
 	
 	kernel_three<<<(number_of_threads+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, real_height);
 	ERROR_CHECK
-
 	
-CUT_SAFE_CALL(cutStopTimer(timer_compute2));
-//printf("Time: %f (ms)\n", cutGetTimerValue(timer_compute2));
-timer_class += cutGetTimerValue(timer_compute2);
-
-
-
 	kernel_draw_detection<<<(irowiterations+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, dev_result2, width*height);
 	ERROR_CHECK
 	
@@ -1744,20 +1701,10 @@ timer_class += cutGetTimerValue(timer_compute2);
 	kernel_highlight_detection<<<(number_of_threads+127)/128,128>>>(dev_img, dev_scale_index_found, real_width, real_height, dev_result2, width*height);
 	ERROR_CHECK
 	
-CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
-CUT_SAFE_CALL(cutStartTimer(timer_compute));
-
 	CUDA_SAFE_CALL(cudaMemcpy(result2, dev_result2, sizeof(uint32_t)*nStages*width*height, cudaMemcpyDeviceToHost));
 	ERROR_CHECK
 
-CUT_SAFE_CALL(cutStopTimer(timer_compute));
-timer_all_scales += cutGetTimerValue(timer_compute);
-//printf("Time of results transfers from device to host: %f (ms)\n", cutGetTimerValue(timer_compute));
 	
-//------------------------------------------------------------------------------------------------------
-
-//printf("Time of ALL transfer: %f (ms)\n", timer_all_scales);
-
 	int finalNb = 0;
 		
 	int *dev_finalNb = NULL;
@@ -1790,11 +1737,8 @@ timer_all_scales += cutGetTimerValue(timer_compute);
 	
 	} //for of all images
 
-printf("TOTAL RESULTS\n\n");
-printf("Data Transfers: %f (ms)\n", timer_all_scales);
-printf("Integral Image: %f (ms)\n", timer_integral);
-printf("Classification: %f (ms)\n", timer_class);
-
+	CUT_SAFE_CALL(cutStopTimer(timer_compute));
+        printf("Time of loop images execution: %f (ms)\n",cutGetTimerValue(timer_compute));
 
 	// FREE ALL the allocations
  
