@@ -92,9 +92,9 @@ void load_image_check(uint32_t *img, char *imgName, int width, int height)
 	int error = 0;                       /* Check if errors */
 
 	/* Input file open */
-//	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
-//	TRACE_INFO(("PGM image file input routine \n"));
-//	TRACE_INFO(("----------------------------------------------------------------------------------\n"));
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
+	TRACE_INFO(("PGM image file input routine \n"));
+	TRACE_INFO(("----------------------------------------------------------------------------------\n"));
 	
 	fp = fopen(imgName, "rb");
 	if (NULL == fp)
@@ -129,8 +129,8 @@ void load_image_check(uint32_t *img, char *imgName, int width, int height)
 			}
 		}
 		/* Display parameters */
-//		TRACE_INFO(("\n     Image width = %d, Image height = %d\n", x_size1, y_size1));
-//		TRACE_INFO(("     Maximum gray level = %d\n",max_gray));
+		TRACE_INFO(("\n     Image width = %d, Image height = %d\n", x_size1, y_size1));
+		TRACE_INFO(("     Maximum gray level = %d\n",max_gray));
 		if (x_size1 > MAX_IMAGESIZE || y_size1 > MAX_IMAGESIZE)
 		{
 			TRACE_INFO(("     Image size exceeds %d x %d\n\n", MAX_IMAGESIZE, MAX_IMAGESIZE));
@@ -193,8 +193,8 @@ void load_image_check(uint32_t *img, char *imgName, int width, int height)
 			}
 		}
 		/* Display parameters */
-//		TRACE_INFO(("\n     Image width = %d, Image height = %d\n", x_size1, y_size1));
-//		TRACE_INFO(("     Maximum gray level = %d\n", max_gray));
+		TRACE_INFO(("\n     Image width = %d, Image height = %d\n", x_size1, y_size1));
+		TRACE_INFO(("     Maximum gray level = %d\n", max_gray));
 		if (x_size1 > MAX_IMAGESIZE || y_size1 > MAX_IMAGESIZE)
 		{
 			TRACE_INFO(("     Image size exceeds %d x %d\n\n", MAX_IMAGESIZE, MAX_IMAGESIZE));
@@ -1239,13 +1239,7 @@ float memcmp_for_float(const float *s1, const float *s2, size_t n_floats)
 int main( int argc, char** argv )
 {
 	// Timer declaration 
-	//time_t start, end;
-
-	//Declare timer
-        unsigned int timer_compute=0;
-
-	CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
-        CUT_SAFE_CALL(cutStartTimer(timer_compute));
+	time_t start, end;
 
 	// Pointer declaration
 	CvHaarClassifierCascade* cascade = NULL;
@@ -1287,8 +1281,8 @@ int main( int argc, char** argv )
 	uint32_t *dev_position = NULL;
 	uint32_t *dev_result2 = NULL;
 
-	Lock lock;
-
+//	Lock lock;
+/*
 	int *dev_foundObj = NULL;
 	
 	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_foundObj, (sizeof (int))));
@@ -1298,7 +1292,7 @@ int main( int argc, char** argv )
                TRACE_INFO(("CUDA_ALLOC_FOUND_OBJ: Couldn't allocate foundObj GPU\n"));
                exit(-1);
         }
-	
+*/	
 	int *dev_scale_index_found = NULL;
 	
 	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_scale_index_found, (sizeof (int))));
@@ -1310,15 +1304,6 @@ int main( int argc, char** argv )
         }
 	
 
-	int *dev_nb_obj_found = NULL;
-	
-	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_nb_obj_found, (sizeof (int))));
-        ERROR_CHECK
-
-        if (dev_nb_obj_found == NULL) {
-               TRACE_INFO(("CUDA_ALLOC_NB_OBJ_FOUND: Couldn't allocate dev_nb_obj_found GPU\n"));
-               exit(-1);
-        }
 
 	int nb_obj_found=0;	
 
@@ -1339,7 +1324,7 @@ int main( int argc, char** argv )
 	int tileWidth = 0;
 	int tileHeight = 0;
 	int nStages = 0; 
-	int foundObj = 0;
+	//int *foundObj = 0;
 	int nTileRows = 0;
 	int nTileCols = 0;
 	
@@ -1361,14 +1346,16 @@ int main( int argc, char** argv )
 
 
 	//int offset_X = 0, offset_Y = 0;
-	float scale_correction_factor = 0.0;
+	//float scale_correction_factor = 0.0;
 	
 	// Factor Declaration 
 	float scaleFactorMax = 0.0;
 	float scaleStep = 1.1; // 10% increment of detector size per scale. Change this value to test other increments 
 	float scaleFactor = 0.0;
 	
-	//float detectionTime = 0.0;
+	int total_scales = 0;
+
+	float detectionTime = 0.0;
 
 	// Integral Image Declaration 
 	float *imgInt_f = NULL;
@@ -1388,10 +1375,10 @@ int main( int argc, char** argv )
 	// Get the Image name and the Cascade file name from the console 
 	haarFileName=argv[1];
 
-//	TRACE_INFO(("\n----------------------------------------------------------------------------------\nSmart Camera application running.... \n----------------------------------------------------------------------------------\n"));
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\nSmart Camera application running.... \n----------------------------------------------------------------------------------\n"));
 
 	// Start the clock counter 
-	//start = clock();
+	start = clock();
 
 	//All the images _MUST_ have the same dimensions
 	imgName=argv[2];
@@ -1418,17 +1405,43 @@ int main( int argc, char** argv )
 	fix_links_cascade_continuous_memory<<<1,1>>>(dev_cascade);      
 	ERROR_CHECK
 
-//	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
-//	TRACE_INFO(("Classifier file input routine \n"));
-//	TRACE_INFO(("----------------------------------------------------------------------------------\n\n"));
-//	TRACE_INFO(("     Number of Stages = %d\n", nStages));
-//	TRACE_INFO(("     Original Feature Height = %d\n", detSizeR));
-//	TRACE_INFO(("     Original Feature Width = %d\n", detSizeC));
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
+	TRACE_INFO(("Classifier file input routine \n"));
+	TRACE_INFO(("----------------------------------------------------------------------------------\n\n"));
+	TRACE_INFO(("     Number of Stages = %d\n", nStages));
+	TRACE_INFO(("     Original Feature Height = %d\n", detSizeR));
+	TRACE_INFO(("     Original Feature Width = %d\n", detSizeC));
 	// Determine the Max Scale Factor
 	if (detSizeR != 0 && detSizeC != 0)
 	{
 		scaleFactorMax = min((int)floor(height/detSizeR), (int)floor(width/detSizeC));
 	}
+
+	for (scaleFactor = 1; scaleFactor <= scaleFactorMax; scaleFactor *= scaleStep)
+        {
+               total_scales++;
+        }
+	
+	int *dev_foundObj = NULL;
+	
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_foundObj, (sizeof(int) * total_scales)));
+        ERROR_CHECK
+
+        if (dev_foundObj == NULL) {
+               TRACE_INFO(("CUDA_ALLOC_FOUND_OBJ: Couldn't allocate foundObj GPU\n"));
+               exit(-1);
+        }
+
+	int *dev_nb_obj_found = NULL;
+	
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_nb_obj_found, (sizeof (int)*total_scales)));
+        ERROR_CHECK
+
+        if (dev_nb_obj_found == NULL) {
+               TRACE_INFO(("CUDA_ALLOC_NB_OBJ_FOUND: Couldn't allocate dev_nb_obj_found GPU\n"));
+               exit(-1);
+        }
+	
 
 	// Give the Allocation size 
 	img=alloc_1d_uint32_t(width*height);
@@ -1446,7 +1459,8 @@ int main( int argc, char** argv )
 	dev_imgInt = cuda_alloc_1d_uint32_t(width*height);	
 	dev_imgSq = cuda_alloc_1d_uint32_t(width*height);
 	dev_imgSqInt = cuda_alloc_1d_uint32_t(width*height);
-	dev_goodPoints = cuda_alloc_1d_uint32_t(width*height);
+	dev_goodPoints = cuda_alloc_1d_uint32_t(width*height*total_scales);
+	//dev_goodPoints = cuda_alloc_1d_uint32_t(width*height);
 	dev_imgInt_f = cuda_alloc_1d_float(width*height);
 	dev_imgSqInt_f = cuda_alloc_1d_float(width*height);
 	dev_goodcenterX=cuda_alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
@@ -1472,13 +1486,6 @@ int main( int argc, char** argv )
 	imgInt_f=alloc_1d_float(width*height);
 	imgSqInt_f=alloc_1d_float(width*height);
 
-
-	CUT_SAFE_CALL(cutStopTimer(timer_compute));
-        printf("Total time before images loop: %f (ms)\n",cutGetTimerValue(timer_compute));
-
-	CUT_SAFE_CALL(cutCreateTimer(&timer_compute));
-        CUT_SAFE_CALL(cutStartTimer(timer_compute));
-
 	//Loop for all the images
 	//--------------------------------------------------------------------------------
 	
@@ -1487,7 +1494,7 @@ int main( int argc, char** argv )
 	
 	imgName=argv[image_counter+2];
 	
-//	printf("Number of arg: %d %s\n",image_counter+2, imgName);
+	printf("     Number of arg: %d %s\n",image_counter+2, imgName);
 	
 	//Memsets
 
@@ -1595,20 +1602,29 @@ int main( int argc, char** argv )
         ERROR_CHECK
 
 	
-//	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
-//	TRACE_INFO(("Processing scales routine \n"));
-//	TRACE_INFO(("----------------------------------------------------------------------------------\n\n"));
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
+	TRACE_INFO(("Processing scales routine \n"));
+	TRACE_INFO(("----------------------------------------------------------------------------------\n\n"));
 
+	int num_pixels = real_width*real_height;
+
+	dim3 block_good((real_width*real_height)/128, total_scales);
+	dim3 thread_good(128);
+
+	initializeGoodPointsCuda<<<block_good, thread_good>>>((uint32_t *)dev_goodPoints, num_pixels);
+	ERROR_CHECK
 
 	// Launch the Main Loop 
-	for (scaleFactor = 1; scaleFactor <= scaleFactorMax; scaleFactor *= scaleStep)
-	{
-		int num_pixels = real_width*real_height;
+//	for (scaleFactor = 1; scaleFactor <= scaleFactorMax; scaleFactor *= scaleStep)
+//	{
+		//int num_pixels = real_width*real_height;
 		
 		//Initializing the goodPoints
 
-		initializeGoodPointsCuda<<<(real_width*real_height)/128, 128>>>((uint32_t *)dev_goodPoints, num_pixels);
-        	ERROR_CHECK
+		//initializeGoodPointsCuda<<<(real_width*real_height)/128, 128>>>((uint32_t *)dev_goodPoints, num_pixels);
+        	//ERROR_CHECK
+
+		scaleFactor = 1;
 
 		tileWidth = (int)floor(detSizeC * scaleFactor + 0.5);
 		tileHeight = (int)floor(detSizeR * scaleFactor + 0.5);
@@ -1617,60 +1633,75 @@ int main( int argc, char** argv )
 
     		//(TP) according to openCV: added correction by reducing scaled detector window by 2 pixels in each direction
 		
-		scale_correction_factor = (float)1.0/(float)((int)floor((detSizeC-2)*scaleFactor)*(int)floor((detSizeR-2)*scaleFactor)); 
+//		scale_correction_factor = (float)1.0/(float)((int)floor((detSizeC-2)*scaleFactor)*(int)floor((detSizeR-2)*scaleFactor)); 
 
 		// compute number of tiles: difference between the size of the Image and the size of the Detector 
 		nTileRows = height-tileHeight;
 		nTileCols = width-tileWidth;
 
-		foundObj = 0;
+/*		foundObj = 0;
 		
 		CUDA_SAFE_CALL(cudaMemcpy(dev_foundObj, &foundObj, sizeof(int), cudaMemcpyHostToDevice));
-		ERROR_CHECK
+		ERROR_CHECK*/
+
+         	CUDA_SAFE_CALL(cudaMemset(dev_foundObj, 0, (sizeof(int) * total_scales)));
+         	ERROR_CHECK
+
 
 		int irowiterations = 0;
 		int icoliterations = 0;
 		int number_of_threads = 0;
+
+		//Prepei na exw to nTileRows, nTileCols, colStep, rowStep!!!!
 
 		irowiterations = (int)ceilf((float)nTileRows/rowStep);
 		icoliterations = (int)ceilf((float)nTileCols/colStep);
 
 		number_of_threads = irowiterations*icoliterations;
 
+printf("total scales:%d\n", total_scales);
+	dim3 block_subwindow((number_of_threads+127)/128, total_scales);
+	dim3 thread_subwindow(128);
 
 
-		subwindow_find_candidates<<<(number_of_threads+127)/128,128>>>( nStages, dev_cascade, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, dev_imgInt_f, dev_imgSqInt_f, tileHeight, tileWidth, real_height, scaleFactor, scale_correction_factor, dev_foundObj, dev_nb_obj_found);
+//	subwindow_find_candidates<<<block_subwindow,thread_subwindow>>>( nStages, dev_cascade, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, dev_imgInt_f, dev_imgSqInt_f, tileHeight, tileWidth, real_height, scaleFactor, scale_correction_factor, dev_foundObj, dev_nb_obj_found);
 
-		ERROR_CHECK
+	subwindow_find_candidates<<<block_subwindow,thread_subwindow>>>(nStages, dev_cascade, dev_goodPoints, real_width, dev_imgInt_f, dev_imgSqInt_f, real_height, dev_foundObj, dev_nb_obj_found, detSizeC, detSizeR);
+	ERROR_CHECK
 
-
-		subwindow_examine_candidates<<<(number_of_threads+127)/128,128>>>(lock, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, tileHeight, tileWidth, scaleFactor, dev_foundObj, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_scale_index_found, dev_nb_obj_found, dev_nb_obj_found2);
-
-		ERROR_CHECK
+//	subwindow_examine_candidates<<<block_subwindow,thread_subwindow>>>(lock, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, tileHeight, tileWidth, scaleFactor, dev_foundObj, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_scale_index_found, dev_nb_obj_found, dev_nb_obj_found2);
 
 
-		CUDA_SAFE_CALL(cudaMemcpy(&nb_obj_found, dev_nb_obj_found, sizeof(int), cudaMemcpyDeviceToHost));
-		ERROR_CHECK
+	subwindow_examine_candidates<<<block_subwindow,thread_subwindow>>>(dev_goodPoints, real_width, real_height, dev_foundObj, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_scale_index_found, dev_nb_obj_found, dev_nb_obj_found2, detSizeC, detSizeR);
+	ERROR_CHECK
+
+
+		//CUDA_SAFE_CALL(cudaMemcpy(&nb_obj_found, dev_nb_obj_found, sizeof(int), cudaMemcpyDeviceToHost));
+		//ERROR_CHECK
 
 		CUDA_SAFE_CALL(cudaMemcpy(&scale_index_found, dev_scale_index_found, sizeof(int), cudaMemcpyDeviceToHost));
 		ERROR_CHECK
 
-	}	
+
+
+//	}	
 	// Done processing all scales 
 
 
 	// Timer end 
-	//end = clock();
+	end = clock();
 
 	// Timer calculation (for detection time) and convert in ms 
-	//detectionTime = (float)(end-start)/CLOCKS_PER_SEC * 1000;
+	detectionTime = (float)(end-start)/CLOCKS_PER_SEC * 1000;
 
-//	TRACE_INFO(("     Finished processing tiles up to (%d/%d,%d/%d) position. Detection time = %f ms.\n", nTileRows-1, height, nTileCols-1, width, detectionTime));
+	TRACE_INFO(("     Finished processing tiles up to (%d/%d,%d/%d) position. Detection time = %f ms.\n",
+				nTileRows-1, height, nTileCols-1, width, detectionTime));
 
 
 	if (scale_index_found)
-	//	TRACE_INFO(("\n----------------------------------------------------------------------------------\nHandling multiple detections\n----------------------------------------------------------------------------------\n"));
+		TRACE_INFO(("\n----------------------------------------------------------------------------------\nHandling multiple detections\n----------------------------------------------------------------------------------\n"));
 
+	printf("Scale Index Found:%d\n", scale_index_found);
 
 	kernel_one<<<1,scale_index_found>>>(dev_scale_index_found, dev_nb_obj_found2);
 	ERROR_CHECK
@@ -1679,11 +1710,11 @@ int main( int argc, char** argv )
 	kernel_two_alt<<<1,1>>>(dev_scale_index_found, dev_nb_obj_found2, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_position, dev_count);
 	ERROR_CHECK
 	
-	
+/*	
 	int irowiterations = 0;
 	int icoliterations = 0;
 	int number_of_threads = 0;
-	
+*/	
 	irowiterations = (int)ceilf((float)NB_MAX_POINTS/3);
 	icoliterations = (int)ceilf((float)NB_MAX_POINTS/3);
 	
@@ -1732,13 +1763,10 @@ int main( int argc, char** argv )
 	// Write the final result of the detection application 
 	imgWrite((uint32_t *)&(result2[scale_index_found*width*height]), result_name, height, width);
 	
-	//TRACE_INFO(("\n     FOUND %d OBJECTS \n",finalNb));
-	//TRACE_INFO(("\n----------------------------------------------------------------------------------\nSmart Camera application ended OK! Check %s file!\n----------------------------------------------------------------------------------\n", result_name));
+	TRACE_INFO(("\n     FOUND %d OBJECTS \n",finalNb));
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\nSmart Camera application ended OK! Check %s file!\n----------------------------------------------------------------------------------\n", result_name));
 	
 	} //for of all images
-
-	CUT_SAFE_CALL(cutStopTimer(timer_compute));
-        printf("Time of loop images execution: %f (ms)\n",cutGetTimerValue(timer_compute));
 
 	// FREE ALL the allocations
  
@@ -1765,7 +1793,7 @@ int main( int argc, char** argv )
 	free(cuda_imgSqInt_f);
 
 
-	//TRACE_INFO(("\n----------------------------------------------------------------------------------\n%d images processed!\n----------------------------------------------------------------------------------\n",argc-2));
+	TRACE_INFO(("\n----------------------------------------------------------------------------------\n%d images processed!\n----------------------------------------------------------------------------------\n",argc-2));
 	
 	return 0;
 }

@@ -125,18 +125,20 @@ imgCopyCuda(uint32_t *dev_imgIn, float *dev_imgOut, int height, int width)
 __global__ void
 initializeGoodPointsCuda(uint32_t *dev_goodPoints, int num_pixels)
 {
+	int scale = blockIdx.y;
 	int index = blockDim.x * blockIdx.x + threadIdx.x;
 
 	if(index < num_pixels)
 	{
-		dev_goodPoints[index] = 255;
+		dev_goodPoints[scale*num_pixels+index] = 255;
 	}
 }
 
 
 
 __global__ void
-subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uint32_t *dev_goodPoints, int nTileRows, int nTileCols, int rowStep, int colStep, int real_width, float *dev_imgInt_f, float *dev_imgSqInt_f, int tileHeight, int tileWidth, int real_height, float scaleFactor, float scale_correction_factor, int *dev_foundObj, int *dev_nb_obj_found)
+//subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uint32_t *dev_goodPoints, int nTileRows, int nTileCols, int rowStep, int colStep, int real_width, float *dev_imgInt_f, float *dev_imgSqInt_f, int tileHeight, int tileWidth, int real_height, float scaleFactor, float scale_correction_factor, int *dev_foundObj, int *dev_nb_obj_found)
+subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uint32_t *dev_goodPoints, int real_width, float *dev_imgInt_f, float *dev_imgSqInt_f, int real_height, int *dev_foundObj, int *dev_nb_obj_found, int detSizeC, int detSizeR)
 {
 	
 	int iStage = 0;
@@ -152,13 +154,35 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 	float a = 0.0;
 	float b = 0.0;
 
+	const int num_pixels = real_width*real_height;
+
+	int nTileRows = 0;
+	int nTileCols = 0;
+	int rowStep = 1;
+	int colStep = 1;
+	const float scaleStep = 1.1;
+	float scale_correction_factor;
+
+	const int scale = blockIdx.y;
+	float scaleFactor = (float) powf(scaleStep, (float)scale);
+	int tileWidth = (int)floor(detSizeC * scaleFactor + 0.5);
+	int tileHeight = (int)floor(detSizeR * scaleFactor + 0.5);
+	rowStep = max(2, (int)floor(scaleFactor + 0.5));
+	colStep = max(2, (int)floor(scaleFactor + 0.5));
+
+	nTileRows = real_height-tileHeight;	//real_height instead of height
+	nTileCols = real_width-tileWidth;	//real_width instead of width
+
+	scale_correction_factor = (float)1.0/(float)((int)floor((detSizeC-2)*scaleFactor)*(int)floor((detSizeR-2)*scaleFactor)); 
+
 	int stride = (nTileCols + colStep -1 )/colStep;
 
-	int counter = blockDim.x * blockIdx.x + threadIdx.x;
+	const int counter = blockDim.x * blockIdx.x + threadIdx.x;
 
-	int irow = (counter / stride)*rowStep;
+	const int irow = (counter / stride)*rowStep;
 
 	int icol = (counter % stride)*colStep;
+
 
 	if ((irow < nTileRows) && (icol < nTileCols))
 	{
@@ -168,7 +192,7 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 			nNodes = dev_cascade->stageClassifier[iStage].count;
 	
 	
-			if (dev_goodPoints[irow*real_width+icol])
+			if (dev_goodPoints[(scale*num_pixels) + (irow*real_width+icol)])
 			{
 				sumClassif = 0.0;
 				//Operation used for every Stage of the Classifier 
@@ -178,7 +202,7 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 				{
 					// this should not occur (possible overflow BUG)
 					varFact = 1.0; 
-					dev_goodPoints[irow*real_width+icol] = 0; 
+					dev_goodPoints[(scale*num_pixels) + (irow*real_width+icol)] = 0; 
 					break;
 				}
 				else
@@ -201,13 +225,13 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 				// Update goodPoints according to detection threshold 
 				if (sumClassif < dev_cascade->stageClassifier[iStage].threshold)
 				{
-					dev_goodPoints[irow*real_width+icol] = 0;
+					dev_goodPoints[(scale*num_pixels) + irow*real_width+icol] = 0;
 				}	  
 				else
 				{	
 					if (iStage == nStages - 1)
 					{
-						atomicAdd(dev_foundObj, 1);
+						atomicAdd(&(dev_foundObj[scale]), 1);
 					}
 				}	  
 			}
@@ -221,7 +245,7 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 	
 	if(irow==0 && icol==0)
 	{
-		*dev_nb_obj_found=0;
+		dev_nb_obj_found[scale]=0;
 	}
 
 
@@ -230,7 +254,8 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 
 
 __global__ void
-subwindow_examine_candidates(Lock lock, uint32_t *dev_goodPoints, int nTileRows, int nTileCols, int rowStep, int colStep, int real_width, int tileHeight, int tileWidth, float scaleFactor, int *dev_foundObj, uint32_t *dev_goodcenterX, uint32_t *dev_goodcenterY, uint32_t *dev_goodRadius, int *dev_scale_index_found, int *dev_nb_obj_found, uint32_t *dev_nb_obj_found2)
+//subwindow_examine_candidates(Lock lock, uint32_t *dev_goodPoints, int nTileRows, int nTileCols, int rowStep, int colStep, int real_width, int tileHeight, int tileWidth, float scaleFactor, int *dev_foundObj, uint32_t *dev_goodcenterX, uint32_t *dev_goodcenterY, uint32_t *dev_goodRadius, int *dev_scale_index_found, int *dev_nb_obj_found, uint32_t *dev_nb_obj_found2)
+subwindow_examine_candidates(uint32_t *dev_goodPoints, int real_width, int real_height, int *dev_foundObj, uint32_t *dev_goodcenterX, uint32_t *dev_goodcenterY, uint32_t *dev_goodRadius, int *dev_scale_index_found, int *dev_nb_obj_found, uint32_t *dev_nb_obj_found2, int detSizeC, int detSizeR)
 {
 	float centerX=0.0;
 	float centerY=0.0;
@@ -243,8 +268,22 @@ subwindow_examine_candidates(Lock lock, uint32_t *dev_goodPoints, int nTileRows,
 	int threshold_X=0;
 	int threshold_Y=0;
 
+	int num_pixels = real_width*real_height;
+	const float scaleStep = 1.1;
+
+	int scale = blockIdx.y;
+
+	float scaleFactor = powf(scaleStep, scale);
+	int tileWidth = (int)floor(detSizeC * scaleFactor + 0.5);
+	int tileHeight = (int)floor(detSizeR * scaleFactor + 0.5);
+	int rowStep = max(2, (int)floor(scaleFactor + 0.5));
+	int colStep = max(2, (int)floor(scaleFactor + 0.5));
+	int nTileRows = real_height-tileHeight;	//real_height instead of height
+	int nTileCols = real_width-tileWidth;	//real_width instead of width
+
+
 	// Determine used object 
-       	if (*dev_foundObj)
+       	if (dev_foundObj[scale])
        	{	
 		int stride = (nTileCols + colStep -1 )/colStep;
 		int counter = blockDim.x * blockIdx.x + threadIdx.x;
@@ -254,7 +293,7 @@ subwindow_examine_candidates(Lock lock, uint32_t *dev_goodPoints, int nTileRows,
 		if ((irow < nTileRows) && (icol < nTileCols))
 		{
 			// Only the detection is used 
-			if (dev_goodPoints[irow*real_width+icol])
+			if (dev_goodPoints[(scale*num_pixels) + irow*real_width+icol])
 			{
 				// Calculation of the Center of the detection 
 				centerX=(((tileWidth-1)*0.5+icol));
@@ -269,7 +308,7 @@ subwindow_examine_candidates(Lock lock, uint32_t *dev_goodPoints, int nTileRows,
 
 				//Reduce number of detections in a given range 
 
-				int dev_nb_obj_found_tmp = (*dev_scale_index_found)*NB_MAX_DETECTION + ((*dev_nb_obj_found)?(*dev_nb_obj_found)-1:0);
+				int dev_nb_obj_found_tmp = (*dev_scale_index_found)*NB_MAX_DETECTION + ((dev_nb_obj_found[scale])?(dev_nb_obj_found[scale])-1:0);
 				
 				
 				if(centerX > (dev_goodcenterX[dev_nb_obj_found_tmp]+threshold_X)
@@ -286,7 +325,7 @@ subwindow_examine_candidates(Lock lock, uint32_t *dev_goodPoints, int nTileRows,
 					radius_tmp=radius;
 					// Get only the restricted Good Points and get back the size for each one 
 
-					int nb_obj_found_tmp = atomicAdd(dev_nb_obj_found, 1);
+					int nb_obj_found_tmp = atomicAdd(&(dev_nb_obj_found[scale]), 1);
 					int dev_scale_index_found_tmp = ((*dev_scale_index_found)?(*dev_scale_index_found)-1:0)*NB_MAX_DETECTION + (nb_obj_found_tmp);
 
 
