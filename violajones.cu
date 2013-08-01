@@ -323,13 +323,13 @@ CvHaarClassifierCascade* cudaAllocCascade_continuous()
 }
 
 /**Copies the entire cascade from the host to device**/
-void copyCascadeFromHostToDevice(CvHaarClassifierCascade* cc_device, CvHaarClassifierCascade* cc_host)
+void copyCascadeFromHostToDevice(CvHaarClassifierCascade* cc_device, CvHaarClassifierCascade* cc_host, cudaStream_t *stream)
 {	
-	CUDA_SAFE_CALL(cudaMemcpy(cc_device, cc_host, (unsigned) sizeof(CvHaarClassifierCascade)
+	CUDA_SAFE_CALL(cudaMemcpyAsync(cc_device, cc_host, (unsigned) sizeof(CvHaarClassifierCascade)
 					+ N_MAX_STAGES * sizeof(CvHaarStageClassifier)
 					+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarClassifier)
 					+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarFeature),
-				  cudaMemcpyHostToDevice));
+				  cudaMemcpyHostToDevice, *stream));
         ERROR_CHECK	
 }
 
@@ -346,6 +346,13 @@ CvHaarClassifierCascade* allocCascade_continuous()
 					+ N_MAX_STAGES * sizeof(CvHaarStageClassifier)
 					+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarClassifier)
 					+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarFeature));
+
+/*
+	cudaMallocHost((CvHaarClassifierCascade **)&cc, sizeof(CvHaarClassifierCascade)
+					+ N_MAX_STAGES * sizeof(CvHaarStageClassifier)
+					+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarClassifier)
+					+ N_MAX_STAGES * N_MAX_CLASSIFIERS * sizeof(CvHaarFeature));
+*/
 
 	memset(cc,0,sizeof(CvHaarClassifierCascade)
 			+ N_MAX_STAGES * sizeof(CvHaarStageClassifier)
@@ -422,6 +429,7 @@ CvHaarClassifierCascade* allocCascade()
 void releaseCascade_continuous(CvHaarClassifierCascade *cc)
 {
 	free(cc);
+	//cudaFreeHost(cc);
 }
 
 /*** Deallocation function for the whole Cascade ***/
@@ -1400,10 +1408,17 @@ int main( int argc, char** argv )
 	// Get the Classifier informations 
 	readClassifCascade(haarFileName, cascade, &detSizeR, &detSizeC, &nStages);
 
-	copyCascadeFromHostToDevice(dev_cascade, cascade);
+	
+	//Create streams used for ovelapping
+	cudaStream_t stream1, stream2;
+	cudaStreamCreate(&stream1);
+	cudaStreamCreate(&stream2);
 
-	fix_links_cascade_continuous_memory<<<1,1>>>(dev_cascade);      
+	copyCascadeFromHostToDevice(dev_cascade, cascade, &stream2);
+
+	fix_links_cascade_continuous_memory<<<1,1,0,stream2>>>(dev_cascade);      
 	ERROR_CHECK
+
 
 	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
 	TRACE_INFO(("Classifier file input routine \n"));
@@ -1524,10 +1539,14 @@ int main( int argc, char** argv )
 
 	// load the Image in Memory 
 	load_image_check((uint32_t *)img, (char *)imgName, width, height);
+
 	
 
-	CUDA_SAFE_CALL(cudaMemcpy(dev_img, img, sizeof(uint32_t)*(width*height), cudaMemcpyHostToDevice));
+//	CUDA_SAFE_CALL(cudaMemcpy(dev_img, img, sizeof(uint32_t)*(width*height), cudaMemcpyHostToDevice));
+	CUDA_SAFE_CALL(cudaMemcpyAsync(dev_img, img, sizeof(uint32_t)*(width*height), cudaMemcpyHostToDevice, stream1));
 	ERROR_CHECK
+
+
 
         dim3 block(block_size); 
 
@@ -1541,10 +1560,10 @@ int main( int argc, char** argv )
 	assert(width % block_size==0);
 	dim3 grid_column(width/block_size);
 
-	computeIntegralImgRowCuda<<<block,grid_row>>>((uint32_t *)dev_img, (uint32_t *)dev_imgInt, width);
+	computeIntegralImgRowCuda<<<block,grid_row,0,stream1>>>((uint32_t *)dev_img, (uint32_t *)dev_imgInt, width);
 	ERROR_CHECK
 
-	computeIntegralImgColCuda<<<block,grid_column>>>((uint32_t *)dev_imgInt, width, height);      
+	computeIntegralImgColCuda<<<block,grid_column,0,stream1>>>((uint32_t *)dev_imgInt, width, height);      
 	ERROR_CHECK
 /*
 	//Square image computation with ROWS----------------------------
@@ -1555,16 +1574,19 @@ int main( int argc, char** argv )
 */	
 	//Square image computation with COLUMNS-------------------------
 
-	computeSquareImageCuda_cols<<<block, grid_column>>>((uint32_t *)dev_img, (uint32_t *)dev_imgSq, height, width);
+	computeSquareImageCuda_cols<<<block, grid_column,0,stream1>>>((uint32_t *)dev_img, (uint32_t *)dev_imgSq, height, width);
         ERROR_CHECK
 
 
-        computeIntegralImgRowCuda<<<block,grid_row>>>((uint32_t *)dev_imgSq, (uint32_t *)dev_imgSqInt, width);
+        computeIntegralImgRowCuda<<<block,grid_row,0,stream1>>>((uint32_t *)dev_imgSq, (uint32_t *)dev_imgSqInt, width);
         ERROR_CHECK
 
-        computeIntegralImgColCuda<<<block,grid_column>>>((uint32_t *)dev_imgSqInt, width, height);
+        computeIntegralImgColCuda<<<block,grid_column,0,stream1>>>((uint32_t *)dev_imgSqInt, width, height);
         ERROR_CHECK
 
+	//Synchronize the streams
+	cudaStreamSynchronize(stream1);
+	cudaStreamSynchronize(stream2);
 
 //Transfer integral image, dotsquare image and dotsquare integral image back to host
 
