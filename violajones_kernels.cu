@@ -140,7 +140,7 @@ __global__ void
 //subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uint32_t *dev_goodPoints, int nTileRows, int nTileCols, int rowStep, int colStep, int real_width, float *dev_imgInt_f, float *dev_imgSqInt_f, int tileHeight, int tileWidth, int real_height, float scaleFactor, float scale_correction_factor, int *dev_foundObj, int *dev_nb_obj_found)
 subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uint32_t *dev_goodPoints, int real_width, float *dev_imgInt_f, float *dev_imgSqInt_f, int real_height, int *dev_foundObj, int *dev_nb_obj_found, int detSizeC, int detSizeR)
 {
-	
+	__shared__ CvHaarFeature shared_feature;
 	int iStage = 0;
 	int nNodes = 0;
 	int iNode = 0;
@@ -182,17 +182,20 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 	const int irow = (counter / stride)*rowStep;
 
 	int icol = (counter % stride)*colStep;
-
+	
+	uint32_t goodPoints_value; 
 
 	if ((irow < nTileRows) && (icol < nTileCols))
 	{
 
+		goodPoints_value = dev_goodPoints[(scale*num_pixels) + (irow*real_width+icol)];
+		__syncthreads();
+
 		for (iStage = 0; iStage < nStages; iStage++)
 		{
 			nNodes = dev_cascade->stageClassifier[iStage].count;
-	
-	
-			if (dev_goodPoints[(scale*num_pixels) + (irow*real_width+icol)])
+
+			if (goodPoints_value)
 			{
 				sumClassif = 0.0;
 				//Operation used for every Stage of the Classifier 
@@ -202,7 +205,7 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 				{
 					// this should not occur (possible overflow BUG)
 					varFact = 1.0; 
-					dev_goodPoints[(scale*num_pixels) + (irow*real_width+icol)] = 0; 
+					goodPoints_value = 0; 
 					break;
 				}
 				else
@@ -213,7 +216,12 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 				
 				for (iNode = 0; iNode < nNodes; iNode++)
 				{
-					computeFeature((float *)dev_imgInt_f, (float *)dev_imgSqInt_f, dev_cascade->stageClassifier[iStage].classifier[iNode].haarFeature, &featVal, irow, icol, tileHeight, tileWidth, scaleFactor, scale_correction_factor, &feature_scaled, real_height, real_width);
+//if all the threads would enter here this would have worked
+/*					if(threadIdx.x < sizeof(CvHaarFeature))
+						*(((char*)&shared_feature)+threadIdx.x) =*((char*)(dev_cascade->stageClassifier[iStage].classifier[iNode].haarFeature)+threadIdx.x);
+					__syncthreads();	
+	*/
+					computeFeature((float *)dev_imgInt_f, /*&shared_feature*/dev_cascade->stageClassifier[iStage].classifier[iNode].haarFeature, &featVal, irow, icol, tileHeight, tileWidth, scaleFactor, scale_correction_factor, &feature_scaled, real_height, real_width);
 					
 					// Get the thresholds for every Node of the stage 
 					thresh = dev_cascade->stageClassifier[iStage].classifier[iNode].threshold;
@@ -225,7 +233,7 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 				// Update goodPoints according to detection threshold 
 				if (sumClassif < dev_cascade->stageClassifier[iStage].threshold)
 				{
-					dev_goodPoints[(scale*num_pixels) + irow*real_width+icol] = 0;
+					goodPoints_value = 0;
 				}	  
 				else
 				{	
@@ -237,7 +245,7 @@ subwindow_find_candidates(int nStages, CvHaarClassifierCascade *dev_cascade, uin
 			}
 	
 		}
-
+		dev_goodPoints[(scale*num_pixels) + (irow*real_width+icol)]=goodPoints_value;
 	}
 
 

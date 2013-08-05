@@ -986,7 +986,7 @@ __host__ __device__ void writeInFeature(int rowVect[4], int colVect[4], int hVec
 //end function: writeInFeature *************************************************
 
 /*** Compute feature value (this is the core function!) ****/
-__host__ __device__ void computeFeature(float *img, float *imgSq, CvHaarFeature *f, float *featVal, int irow, int icol, int height, int width, float scale, float scale_correction_factor, CvHaarFeature *f_scaled, int real_height, int real_width)
+__host__ __device__ void computeFeature(float *img, CvHaarFeature *f, float *featVal, int irow, int icol, int height, int width, float scale, float scale_correction_factor, CvHaarFeature *f_scaled, int real_height, int real_width)
 {
 	int nRects = 0;
 	int col = 0;
@@ -1509,7 +1509,7 @@ int main( int argc, char** argv )
 	
 	imgName=argv[image_counter+2];
 	
-	printf("     Number of arg: %d %s\n",image_counter+2, imgName);
+	//printf("     Number of arg: %d %s\n",image_counter+2, imgName);
 	
 	//Memsets
 
@@ -1681,7 +1681,7 @@ int main( int argc, char** argv )
 
 		number_of_threads = irowiterations*icoliterations;
 
-printf("total scales:%d\n", total_scales);
+	//printf("total scales:%d\n", total_scales);
 	dim3 block_subwindow((number_of_threads+127)/128, total_scales);
 	dim3 thread_subwindow(128);
 
@@ -1723,8 +1723,9 @@ printf("total scales:%d\n", total_scales);
 	if (scale_index_found)
 		TRACE_INFO(("\n----------------------------------------------------------------------------------\nHandling multiple detections\n----------------------------------------------------------------------------------\n"));
 
-	printf("Scale Index Found:%d\n", scale_index_found);
+	//printf("Scale Index Found:%d\n", scale_index_found);
 
+	if (scale_index_found)
 	kernel_one<<<1,scale_index_found>>>(dev_scale_index_found, dev_nb_obj_found2);
 	ERROR_CHECK
 	
