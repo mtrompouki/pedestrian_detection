@@ -65,7 +65,7 @@
 //#define max( a, b ) ( ((a) > (b)) ? (a) : (b) )
 #define min( a, b ) ( ((a) < (b)) ? (a) : (b) )
 
-#define INFO      1
+#define INFO      0
 
 #define MAX_BUFFERSIZE    256                    /* Maximum name file */
 #define MAX_IMAGESIZE     1024                   /* Maximum Image Size */
@@ -986,7 +986,7 @@ __host__ __device__ void writeInFeature(int rowVect[4], int colVect[4], int hVec
 //end function: writeInFeature *************************************************
 
 /*** Compute feature value (this is the core function!) ****/
-__host__ __device__ void computeFeature(float *img, CvHaarFeature *f, float *featVal, int irow, int icol, int height, int width, float scale, float scale_correction_factor, CvHaarFeature *f_scaled, int real_height, int real_width)
+__host__ __device__ void computeFeature(float *img, float *imgSq, CvHaarFeature *f, float *featVal, int irow, int icol, int height, int width, float scale, float scale_correction_factor, CvHaarFeature *f_scaled, int real_height, int real_width)
 {
 	int nRects = 0;
 	int col = 0;
@@ -1144,6 +1144,20 @@ uint32_t *cuda_alloc_1d_uint32_t(int n)
         return (dev_new_variable);
 }
 
+unsigned char *cuda_alloc_1d_unsigned_char(int n)
+{
+	unsigned char*dev_new_variable = NULL;
+
+        CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_new_variable, (unsigned) (n * sizeof (unsigned char))));
+        ERROR_CHECK
+
+	if (dev_new_variable == NULL) {
+                TRACE_INFO(("ALLOC_1D_UNSIGNED_CHAR: Couldn't allocate array of chars in the GPU\n"));
+                return (NULL);
+        }
+
+        return (dev_new_variable);
+}
 
 /*** Allocate one dimension float pointer ****/
 float *alloc_1d_float(int n)
@@ -1281,7 +1295,7 @@ int main( int argc, char** argv )
 	uint32_t *dev_imgSqInt = NULL;	
 	float *dev_imgInt_f = NULL;
 	float *dev_imgSqInt_f = NULL;
-	uint32_t *dev_goodPoints = NULL;
+	//unsigned char*dev_goodPoints = NULL;
 	uint32_t *dev_goodcenterX = NULL;
 	uint32_t *dev_goodcenterY = NULL;
 	uint32_t *dev_goodRadius = NULL;
@@ -1474,7 +1488,7 @@ int main( int argc, char** argv )
 	dev_imgInt = cuda_alloc_1d_uint32_t(width*height);	
 	dev_imgSq = cuda_alloc_1d_uint32_t(width*height);
 	dev_imgSqInt = cuda_alloc_1d_uint32_t(width*height);
-	dev_goodPoints = cuda_alloc_1d_uint32_t(width*height*total_scales);
+	//dev_goodPoints = cuda_alloc_1d_unsigned_char(width*height*total_scales);
 	//dev_goodPoints = cuda_alloc_1d_uint32_t(width*height);
 	dev_imgInt_f = cuda_alloc_1d_float(width*height);
 	dev_imgSqInt_f = cuda_alloc_1d_float(width*height);
@@ -1552,36 +1566,36 @@ int main( int argc, char** argv )
 
 	//+++++++++++++++++++++ FOR THE ROWS THREAD IMPLEMENTATION +++++++
 	//This implementation works only for height multiple to block_size!
-	assert(height % block_size==0);
-        dim3 grid_row(height/block_size);   
+	//assert(height % block_size==0);
+        dim3 grid_row((height+block_size-1)/block_size);   
 
 	//++++++++++++++++++++ FOR THE COLUMNS THREAD IMPLEMENTATION ++++
 	//This implementation works only for width multiple to block_size!
-	assert(width % block_size==0);
-	dim3 grid_column(width/block_size);
+	//assert(width % block_size==0);
+	dim3 grid_column((width+block_size-1)/block_size);
 
-	computeIntegralImgRowCuda<<<block,grid_row,0,stream1>>>((uint32_t *)dev_img, (uint32_t *)dev_imgInt, width);
+	computeIntegralImgRowCuda<<<grid_row,block,0,stream1>>>((uint32_t *)dev_img, (uint32_t *)dev_imgInt, width, height);
 	ERROR_CHECK
 
-	computeIntegralImgColCuda<<<block,grid_column,0,stream1>>>((uint32_t *)dev_imgInt, width, height);      
+	computeIntegralImgColCuda<<<grid_column,block,0,stream1>>>((uint32_t *)dev_imgInt, width, height);      
 	ERROR_CHECK
 /*
 	//Square image computation with ROWS----------------------------
 
-        computeSquareImageCuda_rows<<<block, grid_row>>>((uint32_t *)dev_img, (uint32_t *)dev_imgSq, width);
+        computeSquareImageCuda_rows<<<block, grid_row>>>((uint32_t *)dev_img, (uint32_t *)dev_imgSq, width,height);
         ERROR_CHECK
 
 */	
 	//Square image computation with COLUMNS-------------------------
 
-	computeSquareImageCuda_cols<<<block, grid_column,0,stream1>>>((uint32_t *)dev_img, (uint32_t *)dev_imgSq, height, width);
+	computeSquareImageCuda_cols<<<grid_column,block, 0,stream1>>>((uint32_t *)dev_img, (uint32_t *)dev_imgSq, height, width);
         ERROR_CHECK
 
 
-        computeIntegralImgRowCuda<<<block,grid_row,0,stream1>>>((uint32_t *)dev_imgSq, (uint32_t *)dev_imgSqInt, width);
+        computeIntegralImgRowCuda<<<grid_row,block,0,stream1>>>((uint32_t *)dev_imgSq, (uint32_t *)dev_imgSqInt, width, height);
         ERROR_CHECK
 
-        computeIntegralImgColCuda<<<block,grid_column,0,stream1>>>((uint32_t *)dev_imgSqInt, width, height);
+        computeIntegralImgColCuda<<<grid_column,block,0,stream1>>>((uint32_t *)dev_imgSqInt, width, height);
         ERROR_CHECK
 
 	//Synchronize the streams
@@ -1589,7 +1603,7 @@ int main( int argc, char** argv )
 	cudaStreamSynchronize(stream2);
 
 //Transfer integral image, dotsquare image and dotsquare integral image back to host
-
+/*
 	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt, dev_imgInt, sizeof(uint32_t)*(width*height), cudaMemcpyDeviceToHost));
 	ERROR_CHECK
         
@@ -1598,7 +1612,7 @@ int main( int argc, char** argv )
         
 	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt3, dev_imgSqInt, sizeof(uint32_t)*(width*height), cudaMemcpyDeviceToHost));
 	ERROR_CHECK
-
+*/
 
 
 /*-------------------------------------------------------------------------------------------------------*/
@@ -1616,13 +1630,13 @@ int main( int argc, char** argv )
 	imgCopyCuda<<<(width*height)/128, 128>>>((uint32_t *)dev_imgSqInt, (float *)dev_imgSqInt_f, height, width);	
         ERROR_CHECK
 
-
+/*
 	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt_f, dev_imgInt_f, sizeof(float)*(width*height), cudaMemcpyDeviceToHost));
 	ERROR_CHECK
 
         CUDA_SAFE_CALL(cudaMemcpy(cuda_imgSqInt_f, dev_imgSqInt_f, sizeof(float)*(width*height), cudaMemcpyDeviceToHost));
         ERROR_CHECK
-
+*/
 	
 	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
 	TRACE_INFO(("Processing scales routine \n"));
@@ -1633,8 +1647,10 @@ int main( int argc, char** argv )
 	dim3 block_good((real_width*real_height)/128, total_scales);
 	dim3 thread_good(128);
 
-	initializeGoodPointsCuda<<<block_good, thread_good>>>((uint32_t *)dev_goodPoints, num_pixels);
-	ERROR_CHECK
+	//initializeGoodPointsCuda<<<block_good, thread_good>>>((uint32_t *)dev_goodPoints, num_pixels);
+	//ERROR_CHECK
+	//CUDA_SAFE_CALL(cudaMemset(dev_goodPoints, 255, total_scales*width*height));
+	//ERROR_CHECK
 
 	// Launch the Main Loop 
 //	for (scaleFactor = 1; scaleFactor <= scaleFactorMax; scaleFactor *= scaleStep)
@@ -1681,25 +1697,20 @@ int main( int argc, char** argv )
 
 		number_of_threads = irowiterations*icoliterations;
 
+	int block_size_sub = 64;
+
 	//printf("total scales:%d\n", total_scales);
-	dim3 block_subwindow((number_of_threads+127)/128, total_scales);
-	dim3 thread_subwindow(128);
+	dim3 block_subwindow((number_of_threads+(block_size_sub-1))/block_size_sub, total_scales);
+	dim3 thread_subwindow(block_size_sub);
 
 
-//	subwindow_find_candidates<<<block_subwindow,thread_subwindow>>>( nStages, dev_cascade, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, dev_imgInt_f, dev_imgSqInt_f, tileHeight, tileWidth, real_height, scaleFactor, scale_correction_factor, dev_foundObj, dev_nb_obj_found);
-
-	subwindow_find_candidates<<<block_subwindow,thread_subwindow>>>(nStages, dev_cascade, dev_goodPoints, real_width, dev_imgInt_f, dev_imgSqInt_f, real_height, dev_foundObj, dev_nb_obj_found, detSizeC, detSizeR);
+	CUDA_SAFE_CALL(cudaMemset(dev_nb_obj_found, 0, sizeof(int)*total_scales));
 	ERROR_CHECK
 
-//	subwindow_examine_candidates<<<block_subwindow,thread_subwindow>>>(lock, dev_goodPoints, nTileRows, nTileCols, rowStep, colStep, real_width, tileHeight, tileWidth, scaleFactor, dev_foundObj, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_scale_index_found, dev_nb_obj_found, dev_nb_obj_found2);
+	subwindow_find_candidates<<<block_subwindow,thread_subwindow>>>(nStages, dev_cascade, /*dev_goodPoints,*/ real_width, dev_imgInt_f, dev_imgSqInt_f, real_height, dev_foundObj, dev_nb_obj_found, detSizeC, detSizeR, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_scale_index_found, dev_nb_obj_found2);
 
-
-	subwindow_examine_candidates<<<block_subwindow,thread_subwindow>>>(dev_goodPoints, real_width, real_height, dev_foundObj, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_scale_index_found, dev_nb_obj_found, dev_nb_obj_found2, detSizeC, detSizeR);
 	ERROR_CHECK
 
-
-		//CUDA_SAFE_CALL(cudaMemcpy(&nb_obj_found, dev_nb_obj_found, sizeof(int), cudaMemcpyDeviceToHost));
-		//ERROR_CHECK
 
 		CUDA_SAFE_CALL(cudaMemcpy(&scale_index_found, dev_scale_index_found, sizeof(int), cudaMemcpyDeviceToHost));
 		ERROR_CHECK

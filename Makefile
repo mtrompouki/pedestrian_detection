@@ -25,7 +25,7 @@
 all: violajones
 
 violajones.o: violajones.cu violajones.h
-	nvcc -arch=sm_20 -use_fast_math -g -c violajones.cu 
+	nvcc -arch=sm_11 -use_fast_math -g -c violajones.cu 
 
 violajones:	 violajones.o
 	nvcc -g -lm -L. -lcutil -lcudart -o violajones violajones.o 
