@@ -55,6 +55,14 @@
 #include <float.h>
 #include "cutil.h"
 #include <assert.h>
+/*For anynchronous I/O*/
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <aio.h>
+#include <signal.h>
+#include <stddef.h>
+
 
 /* Static Library */
 #include "violajones.h"
@@ -78,6 +86,65 @@
 #define TRACE_INFO(x)
 #endif
 
+//Structures for asynchrous I/O
+#define IO_SIGNAL SIGUSR1   /* Signal used to notify I/O completion */
+#define errExit(msg) do { perror(msg); exit(EXIT_FAILURE); } while (0)
+#define errMsg(msg)  do { perror(msg); } while (0)
+
+struct ioRequest {      /* Application-defined structure for tracking
+                           I/O requests */
+    int           reqNum;
+    int           status;
+    struct aiocb *aiocbp;
+};
+
+struct ioRequest *ioList;
+struct aiocb *aiocbList;
+struct sigaction sa;
+int openReqs=0;       /* Number of I/O requests*/
+#define BUF_SIZE (2*1024*1024)
+
+static void             /* Handler for SIGQUIT */
+quitHandler(int sig)
+{
+	/* On receipt of SIGQUIT, attempt to cancel each of the
+               outstanding I/O requests, and display status returned
+               from the cancellation requests */
+
+	printf("got SIGQUIT; canceling I/O requests: \n");
+
+	for (int j = 0; j < openReqs; j++) {
+		if (ioList[j].status == EINPROGRESS) {
+			printf("    Request %d on descriptor %d:", j,
+					ioList[j].aiocbp->aio_fildes);
+			int s = aio_cancel(ioList[j].aiocbp->aio_fildes,
+					ioList[j].aiocbp);
+			if (s == AIO_CANCELED)
+				printf("I/O canceled\n");
+			else if (s == AIO_NOTCANCELED)
+				printf("I/O not canceled\n");
+			else if (s == AIO_ALLDONE)
+				printf("I/O all done\n");
+			else
+				errMsg("aio_cancel");
+		}
+	}
+}
+
+static void                 /* Handler for I/O completion signal */
+aioSigHandler(int sig, siginfo_t *si, void *ucontext)
+{
+	//write(STDOUT_FILENO, "I/O completion signal received\n", 31);
+	
+	/* The corresponding ioRequest structure would be available as
+	   struct ioRequest *ioReq = si->si_value.sival_ptr;
+	   and the file descriptor would then be available via
+	   ioReq->aiocbp->aio_fildes */
+	struct ioRequest *ioReq = (struct ioRequest *) si->si_value.sival_ptr;
+	free((void*)ioReq->aiocbp->aio_buf); 
+	close(ioReq->aiocbp->aio_fildes);
+}
+	
 /* ********************************** FUNCTIONS ********************************** */
 
 /*** Read pgm file, only P2 or P5 type image ***/
@@ -301,6 +368,66 @@ void imgWrite(uint32_t *imgIn, char img_out_name[MAX_BUFFERSIZE], int height, in
 	fclose(pgmfile_out);
 }
 //end function: imgWrite *******************************************************
+
+/*** Write the result image ***/
+void imgWriteAsync(uint32_t *imgIn, char img_out_name[MAX_BUFFERSIZE], int height, int width)
+{
+	ioList[openReqs].reqNum = openReqs;
+	ioList[openReqs].status = EINPROGRESS;
+	ioList[openReqs].aiocbp = &aiocbList[openReqs];
+
+	int irow = 0;
+	int icol = 0;
+	int maxval = 0;
+
+	ioList[openReqs].aiocbp->aio_fildes = open(img_out_name,  O_WRONLY);
+
+	if (ioList[openReqs].aiocbp->aio_fildes == -1)
+ 	{
+		TRACE_INFO(("\nPGM file \"%s\" cannot be opened !\n", img_out_name));
+		exit(1);
+	}
+
+	ioList[openReqs].aiocbp->aio_buf = malloc(BUF_SIZE);
+        if (ioList[openReqs].aiocbp->aio_buf == NULL)
+            errExit("malloc");
+
+        ioList[openReqs].aiocbp->aio_reqprio = 0;
+        ioList[openReqs].aiocbp->aio_offset = 0;
+        ioList[openReqs].aiocbp->aio_sigevent.sigev_notify = SIGEV_SIGNAL;
+        ioList[openReqs].aiocbp->aio_sigevent.sigev_signo = IO_SIGNAL;
+        ioList[openReqs].aiocbp->aio_sigevent.sigev_value.sival_ptr =
+                                &ioList[openReqs];
+
+	char * buf = (char*) ioList[openReqs].aiocbp->aio_buf;
+	maxval = maxImage((uint32_t*)imgIn, height, width);
+	if (maxval>MAX_BRIGHTNESS)
+	{
+		buf += sprintf(buf, "P2\n# CREATOR: smartcamera.c\n%d %d\n%d\n", width, height, maxval);
+ 	}
+	else
+ 	{
+		buf += sprintf(buf, "P2\n# CREATOR: smartcamera.c\n%d %d\n%d\n", width, height, MAX_BRIGHTNESS);
+	}
+	for (irow = 0; irow < height; irow++)
+	{
+		for (icol = 0; icol < width; icol++) 
+		{
+			buf += sprintf(buf, "%d\n", imgIn[irow*width+icol]);
+ 		}
+ 	}
+
+	ptrdiff_t nbytes = (char*)buf - (char*)ioList[openReqs].aiocbp->aio_buf;  
+	ioList[openReqs].aiocbp->aio_nbytes = nbytes;
+	assert(nbytes < BUF_SIZE);
+
+	int s = aio_write(ioList[openReqs].aiocbp);
+        if (s == -1)
+            errExit("aio_write");
+
+	openReqs++;
+}
+//end function: imgWriteAsync *******************************************************
 
 
 /*Allocation function for GPU*/
@@ -1331,7 +1458,26 @@ int main( int argc, char** argv )
         }
 	dev_scale_index_found_2 = dev_scale_index_found_1 + 1;
 	
+	ioList = (struct ioRequest*) calloc(argc-2, sizeof(struct ioRequest));
+	if (ioList == NULL)
+        	errExit("calloc");
 
+	aiocbList = (struct aiocb*) calloc(argc-2, sizeof(struct aiocb));
+	if (aiocbList == NULL)
+		errExit("calloc");
+
+	/* Establish handlers for SIGQUIT and the I/O completion signal */
+	sa.sa_flags = SA_RESTART;
+	sigemptyset(&sa.sa_mask);
+
+	sa.sa_handler = quitHandler;
+	if (sigaction(SIGQUIT, &sa, NULL) == -1)
+		errExit("sigaction");
+
+	sa.sa_flags = SA_RESTART | SA_SIGINFO;
+	sa.sa_sigaction = aioSigHandler;
+	if (sigaction(IO_SIGNAL, &sa, NULL) == -1)
+		errExit("sigaction");
 
 	int nb_obj_found=0;	
 
@@ -1610,9 +1756,9 @@ int main( int argc, char** argv )
 	if(image_counter!=0 && image_counter!=1)
 	{
 		cudaStreamSynchronize(current_stream);
-		//printf("Image counter: %d, before imgWrite: result_name:%s\n", image_counter, result_name);
+		//printf("result_name:%s\n", result_name);
 		//Write the final result of the detection application 
-		imgWrite((uint32_t *)&(result2[(*scale_index_found)*width*height]), result_name, height, width);
+		imgWriteAsync((uint32_t *)&(result2[(*scale_index_found)*width*height]), result_name, height, width);
 	}
 		if(image_counter == argc-2)
 			continue;
@@ -1825,7 +1971,7 @@ int main( int argc, char** argv )
 	ERROR_CHECK
 
 
-	//printf("Image Counter: %d, done with kernels: gpu_result_%s\n", image_counter, imgName);
+	//printf("gpu_result_%s\n", imgName);
 	sprintf(result_name, "gpu_result_%s", imgName);
 
 //	cudaStreamSynchronize(current_stream);
@@ -1837,6 +1983,54 @@ int main( int argc, char** argv )
 	TRACE_INFO(("\n----------------------------------------------------------------------------------\nSmart Camera application ended OK! Check %s file!\n----------------------------------------------------------------------------------\n", result_name));
 	
 	} //for of all images
+
+	while (openReqs > 0) {
+        //sleep(3);       /* Delay between each monitoring step */
+
+       /* Check the status of each I/O request that is still
+           in progress */
+
+/*       printf("aio_error():\n");*/
+        for (int j = 0; j < argc-2; j++) {
+            if (ioList[j].status == EINPROGRESS) {
+                /*printf("    for request %d (descriptor %d): ",
+                        j, ioList[j].aiocbp->aio_fildes);*/
+                ioList[j].status = aio_error(ioList[j].aiocbp);
+
+               /*switch (ioList[j].status) {
+                case 0:
+                    printf("I/O succeeded\n");
+                    break;
+                case EINPROGRESS:
+                    printf("In progress\n");
+                    break;
+                case ECANCELED:
+                    printf("Canceled\n");
+                    break;
+                default:
+                    errMsg("aio_error");
+                    break;
+                }*/
+
+               if (ioList[j].status != EINPROGRESS)
+                    openReqs--;
+            }
+        }
+    }
+
+   //printf("All I/O requests completed\n");
+
+   /* Check status return of all I/O requests */
+
+/*   printf("aio_return():\n");
+    for (int j = 0; j < argc-2; j++) {
+        ssize_t s;
+
+       s = aio_return(ioList[j].aiocbp);
+        printf("    for request %d (descriptor %d): %ld\n",
+                j, ioList[j].aiocbp->aio_fildes, (long) s);
+    }*/
+
 
 	// FREE ALL the allocations
  
