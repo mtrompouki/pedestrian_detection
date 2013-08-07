@@ -1128,6 +1128,21 @@ uint32_t *alloc_1d_uint32_t(int n)
 }
 //end function: alloc_1d_uint32_t **********************************************
 
+/*** Allocate one dimension integer pointer ****/
+uint32_t *alloc_1d_uint32_t_pinned(int n)
+{
+
+	uint32_t *new_variable = NULL;
+
+	cudaMallocHost(&new_variable, (unsigned) (n * sizeof (uint32_t)));
+	if (new_variable == NULL) {
+		TRACE_INFO(("ALLOC_1D_UINT_32T_PINNED: Couldn't allocate array of integer\n"));
+		return (NULL);
+	}
+	return (new_variable);
+
+}
+//end function: alloc_1d_uint32_t **********************************************
 
 uint32_t *cuda_alloc_1d_uint32_t(int n)
 {
@@ -1265,76 +1280,60 @@ int main( int argc, char** argv )
 
 	// Pointer declaration
 	CvHaarClassifierCascade* cascade = NULL;
-	CvHaarClassifierCascade* cascade_scaled = NULL;
-	CvHaarFeature *feature_scaled = NULL;
-
 
 	CvHaarClassifierCascade* dev_cascade = NULL;
 
 
 	char *imgName = NULL;
 	char *haarFileName = NULL;
-	char result_name[MAX_BUFFERSIZE]={0};
+	char result_name_1[MAX_BUFFERSIZE]={0};
+	char result_name_2[MAX_BUFFERSIZE]={0};
 
-	uint32_t *img = NULL;
-	uint32_t *imgInt = NULL;
-	uint32_t *imgSq = NULL;
-	uint32_t *imgSqInt = NULL;
-	uint32_t *result2 = NULL;
+	uint32_t *img_1 = NULL;
+	uint32_t *img_2 = NULL;
+	uint32_t *result2_1 = NULL;
+	uint32_t *result2_2 = NULL;
 
-	float *cuda_imgInt_f = NULL;
-	float *cuda_imgSqInt_f = NULL;
+	uint32_t *dev_img_1 = NULL;
+	uint32_t *dev_img_2 = NULL;
+	uint32_t *dev_imgInt_1 = NULL;
+	uint32_t *dev_imgInt_2 = NULL;
+	uint32_t *dev_imgSq_1 = NULL;
+	uint32_t *dev_imgSq_2 = NULL;
+	uint32_t *dev_imgSqInt_1 = NULL;	
+	uint32_t *dev_imgSqInt_2 = NULL;	
+	float *dev_imgInt_f_1 = NULL;
+	float *dev_imgInt_f_2 = NULL;
+	float *dev_imgSqInt_f_1 = NULL;
+	float *dev_imgSqInt_f_2 = NULL;
+	uint32_t *dev_goodcenterX_1 = NULL;
+	uint32_t *dev_goodcenterX_2 = NULL;
+	uint32_t *dev_goodcenterY_1 = NULL;
+	uint32_t *dev_goodcenterY_2 = NULL;
+	uint32_t *dev_goodRadius_1 = NULL;
+	uint32_t *dev_goodRadius_2 = NULL;
+	uint32_t *dev_nb_obj_found2_1 = NULL;
+	uint32_t *dev_nb_obj_found2_2 = NULL;
+	uint32_t *dev_position_1 = NULL;
+	uint32_t *dev_position_2 = NULL;
+	uint32_t *dev_result2_1 = NULL;
+	uint32_t *dev_result2_2 = NULL;
+
+	int *dev_scale_index_found_1 = NULL;
+	int *dev_scale_index_found_2 = NULL;
 	
-	uint32_t *cuda_imgInt = NULL;
-        uint32_t *cuda_imgInt2 = NULL;
-        uint32_t *cuda_imgInt3 = NULL;
-
-	uint32_t *dev_img = NULL;
-	uint32_t *dev_imgInt = NULL;
-	uint32_t *dev_imgSq = NULL;
-	uint32_t *dev_imgSqInt = NULL;	
-	float *dev_imgInt_f = NULL;
-	float *dev_imgSqInt_f = NULL;
-	//unsigned char*dev_goodPoints = NULL;
-	uint32_t *dev_goodcenterX = NULL;
-	uint32_t *dev_goodcenterY = NULL;
-	uint32_t *dev_goodRadius = NULL;
-	uint32_t *dev_nb_obj_found2 = NULL;
-	uint32_t *dev_position = NULL;
-	uint32_t *dev_result2 = NULL;
-
-//	Lock lock;
-/*
-	int *dev_foundObj = NULL;
-	
-	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_foundObj, (sizeof (int))));
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_scale_index_found_1, (2*sizeof (int))));
         ERROR_CHECK
 
-        if (dev_foundObj == NULL) {
-               TRACE_INFO(("CUDA_ALLOC_FOUND_OBJ: Couldn't allocate foundObj GPU\n"));
-               exit(-1);
-        }
-*/	
-	int *dev_scale_index_found = NULL;
-	
-	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_scale_index_found, (sizeof (int))));
-        ERROR_CHECK
-
-        if (dev_scale_index_found == NULL) {
+        if (dev_scale_index_found_1 == NULL) {
                TRACE_INFO(("CUDA_ALLOC_SCALE_INDEX_FOUND: Couldn't allocate scale_index_found GPU\n"));
                exit(-1);
         }
+	dev_scale_index_found_2 = dev_scale_index_found_1 + 1;
 	
 
 
 	int nb_obj_found=0;	
-
-	uint32_t *goodcenterX=NULL;
-	uint32_t *goodcenterY=NULL;
-	uint32_t *goodRadius=NULL;
-	uint32_t *nb_obj_found2=NULL;
-
-	uint32_t *goodPoints = NULL;
 
 	// Counter Declaration 
 	int rowStep = 1;
@@ -1353,19 +1352,22 @@ int main( int argc, char** argv )
 	//int i = 0, j = 0;
 	
 	int real_height = 0, real_width = 0;
-	int scale_index_found=0;
+	int *scale_index_found_1;
+	int *scale_index_found_2;
+	cudaMallocHost(&scale_index_found_1, 2*sizeof(int));
+	scale_index_found_2 = scale_index_found_1 + 1;
 
-	int *dev_count = 0;
+	int *dev_count_1 = 0;
+	int *dev_count_2 = 0;
 
-	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_count, (sizeof (int))));
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_count_1, (2*sizeof (int))));
         ERROR_CHECK
 
-        if (dev_count == NULL) {
+        if (dev_count_1 == NULL) {
                TRACE_INFO(("CUDA_ALLOC_DEV_COUNT: Couldn't allocate dev_count in GPU\n"));
                exit(-1);
         }
-
-
+	dev_count_2 = dev_count_1 + 1;
 
 	//int offset_X = 0, offset_Y = 0;
 	//float scale_correction_factor = 0.0;
@@ -1378,10 +1380,6 @@ int main( int argc, char** argv )
 	int total_scales = 0;
 
 	float detectionTime = 0.0;
-
-	// Integral Image Declaration 
-	float *imgInt_f = NULL;
-	float *imgSqInt_f = NULL;
 
 	//Declare timer
 	//unsigned int timer_compute=0;
@@ -1413,8 +1411,6 @@ int main( int argc, char** argv )
 
 	// Allocate the Cascade Memory 
 	cascade = allocCascade_continuous();
-	cascade_scaled = allocCascade_continuous(); 
-	feature_scaled = (CvHaarFeature *)malloc(sizeof(CvHaarFeature));
 
 	//Allocate the Cascade Memory for GPU
 	dev_cascade = cudaAllocCascade_continuous();
@@ -1428,9 +1424,9 @@ int main( int argc, char** argv )
 	cudaStreamCreate(&stream1);
 	cudaStreamCreate(&stream2);
 
-	copyCascadeFromHostToDevice(dev_cascade, cascade, &stream2);
+	copyCascadeFromHostToDevice(dev_cascade, cascade, &stream1);
 
-	fix_links_cascade_continuous_memory<<<1,1,0,stream2>>>(dev_cascade);      
+	fix_links_cascade_continuous_memory<<<1,1,0,stream1>>>(dev_cascade);      
 	ERROR_CHECK
 
 
@@ -1451,113 +1447,210 @@ int main( int argc, char** argv )
                total_scales++;
         }
 	
-	int *dev_foundObj = NULL;
+	int *dev_foundObj_1 = NULL;
+	int *dev_foundObj_2 = NULL;
 	
-	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_foundObj, (sizeof(int) * total_scales)));
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_foundObj_1, 2*(sizeof(int) * total_scales)));
         ERROR_CHECK
 
-        if (dev_foundObj == NULL) {
+        if (dev_foundObj_1 == NULL) {
                TRACE_INFO(("CUDA_ALLOC_FOUND_OBJ: Couldn't allocate foundObj GPU\n"));
                exit(-1);
         }
+	dev_foundObj_2 = dev_foundObj_1 + total_scales;
 
-	int *dev_nb_obj_found = NULL;
+	int *dev_nb_obj_found_1 = NULL;
+	int *dev_nb_obj_found_2 = NULL;
 	
-	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_nb_obj_found, (sizeof (int)*total_scales)));
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_nb_obj_found_1, 2*(sizeof (int)*total_scales)));
         ERROR_CHECK
 
-        if (dev_nb_obj_found == NULL) {
+        if (dev_nb_obj_found_1 == NULL) {
                TRACE_INFO(("CUDA_ALLOC_NB_OBJ_FOUND: Couldn't allocate dev_nb_obj_found GPU\n"));
                exit(-1);
         }
+	dev_nb_obj_found_2 = dev_nb_obj_found_1 + total_scales;
 	
+	int* finalNb_1 = 0;
+	int* finalNb_2 = 0;
+	cudaMallocHost( &finalNb_1, 2*sizeof(int)) ;
+	finalNb_2 = finalNb_1 + 1;
+		
+	int *dev_finalNb_1 = NULL;
+	int *dev_finalNb_2 = NULL;
+	
+	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_finalNb_1, 2*(sizeof (int))));
+	ERROR_CHECK
+	
+	if (dev_finalNb_1 == NULL) {
+	       TRACE_INFO(("CUDA_ALLOC_FINALNB: Couldn't allocate finalNb in GPU\n"));
+	       exit(-1);
+	}
+	dev_finalNb_2 = dev_finalNb_1 + 1;
 
 	// Give the Allocation size 
-	img=alloc_1d_uint32_t(width*height);
-	imgInt=alloc_1d_uint32_t(width*height);
-	imgSq=alloc_1d_uint32_t(width*height);
-	imgSqInt=alloc_1d_uint32_t(width*height);
-	result2 = alloc_1d_uint32_t(nStages*width*height);
-
-	//images returned from GPU
-	cuda_imgInt_f = alloc_1d_float(width*height);
-	cuda_imgSqInt_f = alloc_1d_float(width*height); 
+	img_1 = alloc_1d_uint32_t_pinned(2*width*height);
+	img_2 = img_1 + width*height;
+	result2_1 = alloc_1d_uint32_t_pinned(2*nStages*width*height);
+	result2_2 = result2_1 + nStages*width*height;
 
 	//CUDA allocations
-	dev_img = cuda_alloc_1d_uint32_t(width*height);
-	dev_imgInt = cuda_alloc_1d_uint32_t(width*height);	
-	dev_imgSq = cuda_alloc_1d_uint32_t(width*height);
-	dev_imgSqInt = cuda_alloc_1d_uint32_t(width*height);
-	//dev_goodPoints = cuda_alloc_1d_unsigned_char(width*height*total_scales);
-	//dev_goodPoints = cuda_alloc_1d_uint32_t(width*height);
-	dev_imgInt_f = cuda_alloc_1d_float(width*height);
-	dev_imgSqInt_f = cuda_alloc_1d_float(width*height);
-	dev_goodcenterX=cuda_alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
-	dev_goodcenterY=cuda_alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
-	dev_goodRadius=cuda_alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
-	dev_nb_obj_found2 = cuda_alloc_1d_uint32_t(nStages);
-	dev_position = cuda_alloc_1d_uint32_t(width*height);
-	dev_result2 = cuda_alloc_1d_uint32_t(nStages*width*height);
-
-
-	//images returned from GPU
-        cuda_imgInt=alloc_1d_uint32_t(width*height);
-        cuda_imgInt2=alloc_1d_uint32_t(width*height);
-        cuda_imgInt3=alloc_1d_uint32_t(width*height);	
-
-	nb_obj_found2=alloc_1d_uint32_t(nStages);
-
-	goodcenterX=alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
-	goodcenterY=alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
-	goodRadius=alloc_1d_uint32_t(nStages*NB_MAX_DETECTION);
-
-	goodPoints=alloc_1d_uint32_t(width*height);
-	imgInt_f=alloc_1d_float(width*height);
-	imgSqInt_f=alloc_1d_float(width*height);
+	dev_img_1 = cuda_alloc_1d_uint32_t(2*width*height);
+	dev_img_2 = dev_img_1 + width*height;
+	dev_imgInt_1 = cuda_alloc_1d_uint32_t(2*width*height);	
+	dev_imgInt_2 = dev_imgInt_1 + width*height;
+	dev_imgSq_1 = cuda_alloc_1d_uint32_t(2*width*height);
+	dev_imgSq_2 = dev_imgSq_1 + width*height;
+	dev_imgSqInt_1 = cuda_alloc_1d_uint32_t(2*width*height);
+	dev_imgSqInt_2 = dev_imgSqInt_1 + width*height;
+	dev_imgInt_f_1 = cuda_alloc_1d_float(2*width*height);
+	dev_imgInt_f_2 = dev_imgInt_f_1 + width*height;
+	dev_imgSqInt_f_1 = cuda_alloc_1d_float(2*width*height);
+	dev_imgSqInt_f_2 = dev_imgSqInt_f_1 + width*height;
+	dev_goodcenterX_1=cuda_alloc_1d_uint32_t(2*nStages*NB_MAX_DETECTION);
+	dev_goodcenterX_2 = dev_goodcenterX_1 + nStages*NB_MAX_DETECTION;
+	dev_goodcenterY_1=cuda_alloc_1d_uint32_t(2*nStages*NB_MAX_DETECTION);
+	dev_goodcenterY_2 = dev_goodcenterY_1 + nStages*NB_MAX_DETECTION;
+	dev_goodRadius_1 = cuda_alloc_1d_uint32_t(2*nStages*NB_MAX_DETECTION);
+	dev_goodRadius_2 = dev_goodRadius_1 + nStages*NB_MAX_DETECTION;
+	dev_nb_obj_found2_1 = cuda_alloc_1d_uint32_t(2*nStages);
+	dev_nb_obj_found2_2 = dev_nb_obj_found2_1 + nStages;
+	dev_position_1 = cuda_alloc_1d_uint32_t(2*width*height);
+	dev_position_2 = dev_position_1 + width*height;
+	dev_result2_1 = cuda_alloc_1d_uint32_t(2*nStages*width*height);
+	dev_result2_2 = dev_result2_1 + nStages*width*height;
 
 	//Loop for all the images
 	//--------------------------------------------------------------------------------
 	
-	for(int image_counter=0; image_counter < argc-2; image_counter++)
+	for(int image_counter=0; image_counter < argc-2+2; image_counter++)
 	{	
-	
 	imgName=argv[image_counter+2];
+
+	cudaStream_t current_stream;
 	
+	int *dev_scale_index_found;
+	int *dev_count;
+	uint32_t *dev_goodcenterX ;
+	uint32_t *dev_goodcenterY ;
+	uint32_t *dev_goodRadius ;
+	uint32_t *dev_nb_obj_found2;
+	uint32_t *dev_position;
+	uint32_t *dev_result2;
+	uint32_t *result2;
+	uint32_t *img;
+	uint32_t *dev_img;
+	uint32_t *dev_imgInt;
+	uint32_t *dev_imgSq;
+	uint32_t *dev_imgSqInt;	
+	float *dev_imgInt_f;
+	float *dev_imgSqInt_f;
+	int *dev_foundObj;
+	int *dev_nb_obj_found;
+	int *dev_finalNb ;
+	int *finalNb;
+	int *scale_index_found;
+	char *result_name;
+
+	if((image_counter%2)==0)
+	{
+		current_stream = stream1;
+		dev_scale_index_found = dev_scale_index_found_1;	
+		dev_count = dev_count_1;
+		dev_goodcenterX = dev_goodcenterX_1;
+		dev_goodcenterY = dev_goodcenterY_1;
+		dev_goodRadius = dev_goodRadius_1;
+		dev_nb_obj_found2 = dev_nb_obj_found2_1;
+		dev_position = dev_position_1;
+		dev_result2 = dev_result2_1;
+		result2 = result2_1;
+		img=img_1;
+		dev_img=dev_img_1;
+		dev_imgInt = dev_imgInt_1;
+		dev_imgSq = dev_imgSq_1;
+		dev_imgSqInt = dev_imgSqInt_1;	
+		dev_imgInt_f = dev_imgInt_f_1;
+		dev_imgSqInt_f = dev_imgSqInt_f_1;
+		dev_foundObj = dev_foundObj_1;	
+		dev_nb_obj_found = dev_nb_obj_found_1;
+		dev_finalNb = dev_finalNb_1;
+		finalNb = finalNb_1;
+		scale_index_found = scale_index_found_1;
+		result_name =result_name_1;
+	}
+	else
+	{
+		current_stream = stream2;	
+		dev_scale_index_found = dev_scale_index_found_2;	
+		dev_count = dev_count_2;
+		dev_goodcenterX = dev_goodcenterX_2;
+		dev_goodcenterY = dev_goodcenterY_2;
+		dev_goodRadius = dev_goodRadius_2;
+		dev_nb_obj_found2 = dev_nb_obj_found2_2;
+		dev_position = dev_position_2;
+		dev_result2 = dev_result2_2;
+		result2 = result2_2;
+		img=img_2;
+		dev_img=dev_img_2;
+		dev_imgInt = dev_imgInt_2;
+		dev_imgSq = dev_imgSq_2;
+		dev_imgSqInt = dev_imgSqInt_2;	
+		dev_imgInt_f = dev_imgInt_f_2;
+		dev_imgSqInt_f = dev_imgSqInt_f_2;
+		dev_foundObj = dev_foundObj_2;	
+		dev_nb_obj_found = dev_nb_obj_found_2;
+		dev_finalNb = dev_finalNb_2;
+		finalNb = finalNb_2;
+		scale_index_found = scale_index_found_2;
+		result_name =result_name_2;
+	}
+
 	//printf("     Number of arg: %d %s\n",image_counter+2, imgName);
 	
+	if(image_counter!=0 && image_counter!=1)
+	{
+		cudaStreamSynchronize(current_stream);
+		//printf("Image counter: %d, before imgWrite: result_name:%s\n", image_counter, result_name);
+		//Write the final result of the detection application 
+		imgWrite((uint32_t *)&(result2[(*scale_index_found)*width*height]), result_name, height, width);
+	}
+		if(image_counter == argc-2)
+			continue;
+		if(image_counter == argc-1)
+			break;
+	
+
 	//Memsets
 
-	CUDA_SAFE_CALL(cudaMemset(dev_scale_index_found, 0, sizeof(int)));
+	CUDA_SAFE_CALL(cudaMemsetAsync(dev_scale_index_found, 0, sizeof(int), current_stream));
 	ERROR_CHECK
 
-	CUDA_SAFE_CALL(cudaMemset(dev_count, 0, sizeof(int)));
+	CUDA_SAFE_CALL(cudaMemsetAsync(dev_count, 0, sizeof(int), current_stream));
         ERROR_CHECK
 
-	CUDA_SAFE_CALL(cudaMemset(dev_goodcenterX, 0, (sizeof(uint32_t)*nStages*NB_MAX_DETECTION)));
+	CUDA_SAFE_CALL(cudaMemsetAsync(dev_goodcenterX, 0, (sizeof(uint32_t)*nStages*NB_MAX_DETECTION), current_stream));
 	ERROR_CHECK
 
-	CUDA_SAFE_CALL(cudaMemset(dev_goodcenterY, 0, (sizeof(uint32_t)*nStages*NB_MAX_DETECTION)));
+	CUDA_SAFE_CALL(cudaMemsetAsync(dev_goodcenterY, 0, (sizeof(uint32_t)*nStages*NB_MAX_DETECTION), current_stream));
 	ERROR_CHECK
 
-	CUDA_SAFE_CALL(cudaMemset(dev_goodRadius, 0, (sizeof(uint32_t)*nStages*NB_MAX_DETECTION)));
+	CUDA_SAFE_CALL(cudaMemsetAsync(dev_goodRadius, 0, (sizeof(uint32_t)*nStages*NB_MAX_DETECTION), current_stream));
 	ERROR_CHECK
 
-	CUDA_SAFE_CALL(cudaMemset(dev_nb_obj_found2, 0, (sizeof(uint32_t)*nStages)));
+	CUDA_SAFE_CALL(cudaMemsetAsync(dev_nb_obj_found2, 0, (sizeof(uint32_t)*nStages), current_stream));
 	ERROR_CHECK
 
-	CUDA_SAFE_CALL(cudaMemset(dev_position, 0, (sizeof(uint32_t)*width*height)));
+	CUDA_SAFE_CALL(cudaMemsetAsync(dev_position, 0, (sizeof(uint32_t)*width*height), current_stream));
 	ERROR_CHECK
 
-	CUDA_SAFE_CALL(cudaMemset(dev_result2, 0, (sizeof(uint32_t)*nStages*width*height)));
+	CUDA_SAFE_CALL(cudaMemsetAsync(dev_result2, 0, (sizeof(uint32_t)*nStages*width*height), current_stream));
 	ERROR_CHECK
 
 	// load the Image in Memory 
 	load_image_check((uint32_t *)img, (char *)imgName, width, height);
 
-	
-
 //	CUDA_SAFE_CALL(cudaMemcpy(dev_img, img, sizeof(uint32_t)*(width*height), cudaMemcpyHostToDevice));
-	CUDA_SAFE_CALL(cudaMemcpyAsync(dev_img, img, sizeof(uint32_t)*(width*height), cudaMemcpyHostToDevice, stream1));
+	CUDA_SAFE_CALL(cudaMemcpyAsync(dev_img, img, sizeof(uint32_t)*(width*height), cudaMemcpyHostToDevice, current_stream));
 	ERROR_CHECK
 
 
@@ -1574,10 +1667,10 @@ int main( int argc, char** argv )
 	//assert(width % block_size==0);
 	dim3 grid_column((width+block_size-1)/block_size);
 
-	computeIntegralImgRowCuda<<<grid_row,block,0,stream1>>>((uint32_t *)dev_img, (uint32_t *)dev_imgInt, width, height);
+	computeIntegralImgRowCuda<<<grid_row,block,0,current_stream>>>((uint32_t *)dev_img, (uint32_t *)dev_imgInt, width, height);
 	ERROR_CHECK
 
-	computeIntegralImgColCuda<<<grid_column,block,0,stream1>>>((uint32_t *)dev_imgInt, width, height);      
+	computeIntegralImgColCuda<<<grid_column,block,0,current_stream>>>((uint32_t *)dev_imgInt, width, height);      
 	ERROR_CHECK
 /*
 	//Square image computation with ROWS----------------------------
@@ -1588,32 +1681,21 @@ int main( int argc, char** argv )
 */	
 	//Square image computation with COLUMNS-------------------------
 
-	computeSquareImageCuda_cols<<<grid_column,block, 0,stream1>>>((uint32_t *)dev_img, (uint32_t *)dev_imgSq, height, width);
+	computeSquareImageCuda_cols<<<grid_column,block, 0,current_stream>>>((uint32_t *)dev_img, (uint32_t *)dev_imgSq, height, width);
         ERROR_CHECK
 
 
-        computeIntegralImgRowCuda<<<grid_row,block,0,stream1>>>((uint32_t *)dev_imgSq, (uint32_t *)dev_imgSqInt, width, height);
+        computeIntegralImgRowCuda<<<grid_row,block,0,current_stream>>>((uint32_t *)dev_imgSq, (uint32_t *)dev_imgSqInt, width, height);
         ERROR_CHECK
 
-        computeIntegralImgColCuda<<<grid_column,block,0,stream1>>>((uint32_t *)dev_imgSqInt, width, height);
+        computeIntegralImgColCuda<<<grid_column,block,0,current_stream>>>((uint32_t *)dev_imgSqInt, width, height);
         ERROR_CHECK
 
 	//Synchronize the streams
+	/*
 	cudaStreamSynchronize(stream1);
 	cudaStreamSynchronize(stream2);
-
-//Transfer integral image, dotsquare image and dotsquare integral image back to host
-/*
-	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt, dev_imgInt, sizeof(uint32_t)*(width*height), cudaMemcpyDeviceToHost));
-	ERROR_CHECK
-        
-	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt2, dev_imgSq, sizeof(uint32_t)*(width*height), cudaMemcpyDeviceToHost));
-	ERROR_CHECK
-        
-	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt3, dev_imgSqInt, sizeof(uint32_t)*(width*height), cudaMemcpyDeviceToHost));
-	ERROR_CHECK
-*/
-
+	*/
 
 /*-------------------------------------------------------------------------------------------------------*/
 /*					   CLASSIFICATION PHASE						 */
@@ -1621,23 +1703,13 @@ int main( int argc, char** argv )
 
 
 	// Copy the Image to float array 
-	imgCopy((uint32_t *)imgInt, (float *)imgInt_f, height, width);
-	imgCopy((uint32_t *)imgSqInt, (float *)imgSqInt_f, height, width);
 
-	imgCopyCuda<<<(width*height)/128, 128>>>((uint32_t *)dev_imgInt, (float *)dev_imgInt_f, height, width);
+	imgCopyCuda<<<(width*height)/128, 128, 0, current_stream>>>((uint32_t *)dev_imgInt, (float *)dev_imgInt_f, height, width);
         ERROR_CHECK
 
-	imgCopyCuda<<<(width*height)/128, 128>>>((uint32_t *)dev_imgSqInt, (float *)dev_imgSqInt_f, height, width);	
+	imgCopyCuda<<<(width*height)/128, 128, 0, current_stream>>>((uint32_t *)dev_imgSqInt, (float *)dev_imgSqInt_f, height, width);	
         ERROR_CHECK
 
-/*
-	CUDA_SAFE_CALL(cudaMemcpy(cuda_imgInt_f, dev_imgInt_f, sizeof(float)*(width*height), cudaMemcpyDeviceToHost));
-	ERROR_CHECK
-
-        CUDA_SAFE_CALL(cudaMemcpy(cuda_imgSqInt_f, dev_imgSqInt_f, sizeof(float)*(width*height), cudaMemcpyDeviceToHost));
-        ERROR_CHECK
-*/
-	
 	TRACE_INFO(("\n----------------------------------------------------------------------------------\n"));
 	TRACE_INFO(("Processing scales routine \n"));
 	TRACE_INFO(("----------------------------------------------------------------------------------\n\n"));
@@ -1647,21 +1719,6 @@ int main( int argc, char** argv )
 	dim3 block_good((real_width*real_height)/128, total_scales);
 	dim3 thread_good(128);
 
-	//initializeGoodPointsCuda<<<block_good, thread_good>>>((uint32_t *)dev_goodPoints, num_pixels);
-	//ERROR_CHECK
-	//CUDA_SAFE_CALL(cudaMemset(dev_goodPoints, 255, total_scales*width*height));
-	//ERROR_CHECK
-
-	// Launch the Main Loop 
-//	for (scaleFactor = 1; scaleFactor <= scaleFactorMax; scaleFactor *= scaleStep)
-//	{
-		//int num_pixels = real_width*real_height;
-		
-		//Initializing the goodPoints
-
-		//initializeGoodPointsCuda<<<(real_width*real_height)/128, 128>>>((uint32_t *)dev_goodPoints, num_pixels);
-        	//ERROR_CHECK
-
 		scaleFactor = 1;
 
 		tileWidth = (int)floor(detSizeC * scaleFactor + 0.5);
@@ -1669,28 +1726,17 @@ int main( int argc, char** argv )
 		rowStep = max(2, (int)floor(scaleFactor + 0.5));
 		colStep = max(2, (int)floor(scaleFactor + 0.5));
 
-    		//(TP) according to openCV: added correction by reducing scaled detector window by 2 pixels in each direction
-		
-//		scale_correction_factor = (float)1.0/(float)((int)floor((detSizeC-2)*scaleFactor)*(int)floor((detSizeR-2)*scaleFactor)); 
-
 		// compute number of tiles: difference between the size of the Image and the size of the Detector 
 		nTileRows = height-tileHeight;
 		nTileCols = width-tileWidth;
 
-/*		foundObj = 0;
-		
-		CUDA_SAFE_CALL(cudaMemcpy(dev_foundObj, &foundObj, sizeof(int), cudaMemcpyHostToDevice));
-		ERROR_CHECK*/
-
-         	CUDA_SAFE_CALL(cudaMemset(dev_foundObj, 0, (sizeof(int) * total_scales)));
+         	CUDA_SAFE_CALL(cudaMemsetAsync(dev_foundObj, 0, (sizeof(int) * total_scales),current_stream));
          	ERROR_CHECK
 
 
 		int irowiterations = 0;
 		int icoliterations = 0;
 		int number_of_threads = 0;
-
-		//Prepei na exw to nTileRows, nTileCols, colStep, rowStep!!!!
 
 		irowiterations = (int)ceilf((float)nTileRows/rowStep);
 		icoliterations = (int)ceilf((float)nTileCols/colStep);
@@ -1704,22 +1750,21 @@ int main( int argc, char** argv )
 	dim3 thread_subwindow(block_size_sub);
 
 
-	CUDA_SAFE_CALL(cudaMemset(dev_nb_obj_found, 0, sizeof(int)*total_scales));
+	CUDA_SAFE_CALL(cudaMemsetAsync(dev_nb_obj_found, 0, sizeof(int)*total_scales, current_stream));
 	ERROR_CHECK
 
-	subwindow_find_candidates<<<block_subwindow,thread_subwindow>>>(nStages, dev_cascade, /*dev_goodPoints,*/ real_width, dev_imgInt_f, dev_imgSqInt_f, real_height, dev_foundObj, dev_nb_obj_found, detSizeC, detSizeR, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_scale_index_found, dev_nb_obj_found2);
+	subwindow_find_candidates<<<block_subwindow,thread_subwindow, 0, current_stream>>>(nStages, dev_cascade, real_width, dev_imgInt_f, dev_imgSqInt_f, real_height, dev_foundObj, dev_nb_obj_found, detSizeC, detSizeR, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_scale_index_found, dev_nb_obj_found2);
 
 	ERROR_CHECK
 
 
-		CUDA_SAFE_CALL(cudaMemcpy(&scale_index_found, dev_scale_index_found, sizeof(int), cudaMemcpyDeviceToHost));
-		ERROR_CHECK
+	CUDA_SAFE_CALL(cudaMemcpyAsync(scale_index_found, dev_scale_index_found, sizeof(int), cudaMemcpyDeviceToHost, current_stream));
+	ERROR_CHECK
 
 
 
 //	}	
 	// Done processing all scales 
-
 
 	// Timer end 
 	end = clock();
@@ -1727,21 +1772,20 @@ int main( int argc, char** argv )
 	// Timer calculation (for detection time) and convert in ms 
 	detectionTime = (float)(end-start)/CLOCKS_PER_SEC * 1000;
 
-	TRACE_INFO(("     Finished processing tiles up to (%d/%d,%d/%d) position. Detection time = %f ms.\n",
-				nTileRows-1, height, nTileCols-1, width, detectionTime));
+	TRACE_INFO(("     Finished processing tiles up to (%d/%d,%d/%d) position. Detection time = %f ms.\n", nTileRows-1, height, nTileCols-1, width, detectionTime));
 
 
-	if (scale_index_found)
+	if (*scale_index_found)
 		TRACE_INFO(("\n----------------------------------------------------------------------------------\nHandling multiple detections\n----------------------------------------------------------------------------------\n"));
 
 	//printf("Scale Index Found:%d\n", scale_index_found);
 
-	if (scale_index_found)
-	kernel_one<<<1,scale_index_found>>>(dev_scale_index_found, dev_nb_obj_found2);
+	if (*scale_index_found)
+	kernel_one<<<1,*scale_index_found,0, current_stream>>>(dev_scale_index_found, dev_nb_obj_found2);
 	ERROR_CHECK
 	
 	
-	kernel_two_alt<<<1,1>>>(dev_scale_index_found, dev_nb_obj_found2, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_position, dev_count);
+	kernel_two_alt<<<1,1, 0, current_stream>>>(dev_scale_index_found, dev_nb_obj_found2, dev_goodcenterX, dev_goodcenterY, dev_goodRadius, dev_position, dev_count);
 	ERROR_CHECK
 	
 /*	
@@ -1754,50 +1798,42 @@ int main( int argc, char** argv )
 	
 	number_of_threads = irowiterations*icoliterations;
 	
-	kernel_three<<<(number_of_threads+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, real_height);
+	kernel_three<<<(number_of_threads+127)/128,128,0, current_stream>>>(dev_position, dev_scale_index_found, real_width, real_height);
 	ERROR_CHECK
 	
-	kernel_draw_detection<<<(irowiterations+127)/128,128>>>(dev_position, dev_scale_index_found, real_width, dev_result2, width*height);
+	kernel_draw_detection<<<(irowiterations+127)/128,128,0,current_stream>>>(dev_position, dev_scale_index_found, real_width, dev_result2, width*height);
 	ERROR_CHECK
 	
 	
 	number_of_threads = real_width * real_height;
 	
-	kernel_highlight_detection<<<(number_of_threads+127)/128,128>>>(dev_img, dev_scale_index_found, real_width, real_height, dev_result2, width*height);
+	kernel_highlight_detection<<<(number_of_threads+127)/128,128,0,current_stream>>>(dev_img, dev_scale_index_found, real_width, real_height, dev_result2, width*height);
 	ERROR_CHECK
 	
-	CUDA_SAFE_CALL(cudaMemcpy(result2, dev_result2, sizeof(uint32_t)*nStages*width*height, cudaMemcpyDeviceToHost));
+	CUDA_SAFE_CALL(cudaMemcpyAsync(result2, dev_result2, sizeof(uint32_t)*nStages*width*height, cudaMemcpyDeviceToHost, current_stream));
 	ERROR_CHECK
 
 	
-	int finalNb = 0;
-		
-	int *dev_finalNb = NULL;
 	
-	CUDA_SAFE_CALL( cudaMalloc( (void**)&dev_finalNb, (sizeof (int))));
+	CUDA_SAFE_CALL(cudaMemsetAsync(dev_finalNb, 0, sizeof(int),current_stream));
 	ERROR_CHECK
 	
-	if (dev_finalNb == NULL) {
-	       TRACE_INFO(("CUDA_ALLOC_FINALNB: Couldn't allocate finalNb in GPU\n"));
-	       exit(-1);
-	}
-	
-	CUDA_SAFE_CALL(cudaMemset(dev_finalNb, 0, sizeof(int)));
+	kernel_finalNb<<<(irowiterations+127)/128,128, 0, current_stream>>>(dev_finalNb, dev_position);
 	ERROR_CHECK
 	
-	kernel_finalNb<<<(irowiterations+127)/128,128>>>(dev_finalNb, dev_position);
-	ERROR_CHECK
-	
-	CUDA_SAFE_CALL(cudaMemcpy(&finalNb, dev_finalNb, sizeof(int), cudaMemcpyDeviceToHost));
+	CUDA_SAFE_CALL(cudaMemcpyAsync(finalNb, dev_finalNb, sizeof(int), cudaMemcpyDeviceToHost, current_stream));
 	ERROR_CHECK
 
 
+	//printf("Image Counter: %d, done with kernels: gpu_result_%s\n", image_counter, imgName);
 	sprintf(result_name, "gpu_result_%s", imgName);
 
+//	cudaStreamSynchronize(current_stream);
+
 	// Write the final result of the detection application 
-	imgWrite((uint32_t *)&(result2[scale_index_found*width*height]), result_name, height, width);
+//	imgWrite((uint32_t *)&(result2[(*scale_index_found)*width*height]), result_name, height, width);
 	
-	TRACE_INFO(("\n     FOUND %d OBJECTS \n",finalNb));
+	TRACE_INFO(("\n     FOUND %d OBJECTS \n",*finalNb));
 	TRACE_INFO(("\n----------------------------------------------------------------------------------\nSmart Camera application ended OK! Check %s file!\n----------------------------------------------------------------------------------\n", result_name));
 	
 	} //for of all images
@@ -1805,27 +1841,11 @@ int main( int argc, char** argv )
 	// FREE ALL the allocations
  
 	releaseCascade_continuous(cascade);	
-	releaseCascade_continuous(cascade_scaled);
 	
-	free(feature_scaled);
-	free(img);
-	free(imgInt);
-	free(imgSq);
-	free(imgSqInt);
-	free(result2);
-
-	free(goodcenterX);
-	free(goodcenterY);
-	free(goodRadius);
-	free(nb_obj_found2);
-	free(goodPoints);
-	
-	free(cuda_imgInt);
-	free(cuda_imgInt2);
-	free(cuda_imgInt3);
-	free(cuda_imgInt_f);
-	free(cuda_imgSqInt_f);
-
+	cudaFreeHost(img_1);
+	cudaFreeHost(result2_1);
+	cudaFreeHost(finalNb_1);
+	cudaFreeHost(scale_index_found_1);
 
 	TRACE_INFO(("\n----------------------------------------------------------------------------------\n%d images processed!\n----------------------------------------------------------------------------------\n",argc-2));
 	
